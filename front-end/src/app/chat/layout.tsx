@@ -1,6 +1,6 @@
 'use client';
 
-import { ChatProvider } from '@/lib/context/chat-context';
+import { ChatProvider } from '@/libs/context/chat-context';
 import { ConfigProvider } from 'antd';
 
 export default function ChatLayout({

@@ -1,8 +1,8 @@
 'use client';
 import { createConversation } from '@/api/chat-api';
-import { useChatContext } from '@/lib/context/chat-context';
-import { ChatState } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { useChatContext } from '@/libs/context/chat-context';
+import { ChatState } from '@/libs/types';
+import { cn } from '@/libs/utils';
 import { Button, Card, Form } from 'antd';
 import { Select } from 'antd';
 import React from 'react';

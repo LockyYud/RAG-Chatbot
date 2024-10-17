@@ -1,10 +1,9 @@
 import React from 'react';
 import { PromptForm } from './prompt-form';
-import { ChatState, Message } from '@/lib/types';
-import useSpeechRecognize from '@/lib/hooks/use-speech-recognition';
-// import { cn } from '@/lib/utils';
+import { ChatState, Message } from '@/libs/types';
+import useSpeechRecognize from '@/libs/hooks/use-speech-recognition';
 import { RecordButton, TextRecord } from './recorder';
-import { useChatContext } from '@/lib/context/chat-context';
+import { useChatContext } from '@/libs/context/chat-context';
 export interface ChatPanelProps {
     setListMessage: React.Dispatch<React.SetStateAction<Message[]>>;
     isAtBottom: boolean;

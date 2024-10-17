@@ -1,9 +1,5 @@
 import axios from 'axios';
-import { Message } from '@/lib/types';
-import { message } from 'antd';
-// import { toast } from "sonner";
-// import { AUTH, HTTP_STATUS } from "@/lib/constant/constant";
-// import { removeCookie } from "@/lib/utils";
+import { Message } from '@/libs/types';
 
 const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL || 'https://bot.lingobee.vn/';
@@ -17,6 +13,7 @@ const service = axios.create({
 });
 
 service.interceptors.request.use(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (config: any) => {
         const access_token =
             'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7InVzZXJJZCI6IjY2YzczNTkyMTNjNTZhNGRiODFjMjJhOSIsInJvbGUiOiJBZG1pbiJ9LCJpYXQiOjE3MjQ1OTY0ODAsImV4cCI6MTcyNTQ2MDQ4MH0.5IWUFS4f4VkdfZ3uWyGdNUKqrzla1X2mMjLt5VDQaAw';

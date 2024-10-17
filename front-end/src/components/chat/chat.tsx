@@ -1,15 +1,15 @@
 'use client';
 
-import { useLocalStorage } from '@/lib/hooks/use-local-storage';
+import { useLocalStorage } from '@/libs/hooks/use-local-storage';
 import { useEffect, useState } from 'react';
 import { ChatList } from './chat-list';
-import { ChatState, Message } from '@/lib/types';
+import { ChatState, Message } from '@/libs/types';
 import { ChatPanel } from './chat-panel';
-import { useScrollAnchor } from '@/lib/hooks/use-scroll-anchor';
-import { cn } from '@/lib/utils';
+import { useScrollAnchor } from '@/libs/hooks/use-scroll-anchor';
+import { cn } from '@/libs/utils';
 import { EmptyScreen } from './empty-screen';
 import { getMessage, sendMessage } from '@/api/chat-api';
-import { useChatContext } from '@/lib/context/chat-context';
+import { useChatContext } from '@/libs/context/chat-context';
 import { StartBox } from './start-box';
 
 interface InforConversation {

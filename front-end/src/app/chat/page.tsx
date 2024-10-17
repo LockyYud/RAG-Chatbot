@@ -1,11 +1,10 @@
 'use client';
 import { deleteConversation } from '@/api/chat-api';
 import { Chat } from '@/components/chat/chat';
-import { useChatContext } from '@/lib/context/chat-context';
+import { useChatContext } from '@/libs/context/chat-context';
 import FormOutlined from '@ant-design/icons/lib/icons/FormOutlined';
 import { Layout, Tooltip } from 'antd';
 import { Content, Header } from 'antd/es/layout/layout';
-import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function Page() {
@@ -23,7 +22,6 @@ export default function Page() {
             window.removeEventListener('beforeunload', handleBeforeUnload);
         };
     }, [id]);
-    const route = useRouter();
     return (
         <div>
             <Layout>

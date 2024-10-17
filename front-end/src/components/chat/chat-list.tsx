@@ -1,11 +1,11 @@
 'use client';
-import { ChatState, Message } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { ChatState, Message } from '@/libs/types';
+import { cn } from '@/libs/utils';
 import { Divider, notification, Tooltip } from 'antd';
 import { BotMessage, Suggestion, UserMessage } from './message';
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 import { suggestMessage } from '@/api/chat-api';
-import { useChatContext } from '@/lib/context/chat-context';
+import { useChatContext } from '@/libs/context/chat-context';
 import { TranslationButton } from './trans-button';
 import { FloatButton } from 'antd';
 import {

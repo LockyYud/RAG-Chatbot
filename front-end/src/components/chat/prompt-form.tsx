@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 import Textarea from 'react-textarea-autosize';
-import { useEnterSubmit } from '@/lib/hooks/use-enter-submit';
-import { ChatState, Message } from '@/lib/types';
-import { useChatContext } from '@/lib/context/chat-context';
+import { useEnterSubmit } from '@/libs/hooks/use-enter-submit';
+import { ChatState, Message } from '@/libs/types';
+import { useChatContext } from '@/libs/context/chat-context';
 
 export function PromptForm({
     setListMessage,

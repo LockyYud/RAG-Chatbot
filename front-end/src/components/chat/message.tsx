@@ -1,9 +1,9 @@
 'use client';
 
 import { spinner } from './spinner';
-import { cn } from '@/lib/utils';
+import { cn } from '@/libs/utils';
 import RobotOutlined from '@ant-design/icons/lib/icons/RobotOutlined';
-import { Message } from '@/lib/types';
+import { Message } from '@/libs/types';
 import { Card } from 'antd';
 import { Dispatch, SetStateAction } from 'react';
 

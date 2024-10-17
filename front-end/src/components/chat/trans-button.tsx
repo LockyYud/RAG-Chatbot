@@ -3,9 +3,9 @@ import { translateEn2Vn } from '@/api/chat-api';
 import { TranslationOutlined } from '@ant-design/icons';
 import { Button, Tooltip } from 'antd';
 import React, { useState } from 'react';
-import { cn } from '@/lib/utils';
-import { useChatContext } from '@/lib/context/chat-context';
-import { ChatState } from '@/lib/types';
+import { cn } from '@/libs/utils';
+import { useChatContext } from '@/libs/context/chat-context';
+import { ChatState } from '@/libs/types';
 interface TranslateProps extends React.ComponentProps<'div'> {
     content: string;
 }

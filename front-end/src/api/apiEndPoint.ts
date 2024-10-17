@@ -1,6 +1,6 @@
 import { LessonPlan } from '@/app/lesson-plan/type';
 import request from './request';
-import { Question } from '@/lib/types';
+import { Question } from '@/libs/types';
 
 export const createLessonPlanRequest = async (data: LessonPlan) => {
     return request.post('ai/create-lesson-plan', data);
