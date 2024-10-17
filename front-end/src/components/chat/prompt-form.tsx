@@ -3,8 +3,7 @@
 import * as React from 'react';
 import Textarea from 'react-textarea-autosize';
 import { useEnterSubmit } from '@/libs/hooks/use-enter-submit';
-import { ChatState, Message } from '@/libs/types';
-import { useChatContext } from '@/libs/context/chat-context';
+import { Message } from '@/libs/types';
 
 export function PromptForm({
     setListMessage,
@@ -14,7 +13,6 @@ export function PromptForm({
     const [input, setInput] = React.useState('');
     const { formRef, onKeyDown } = useEnterSubmit();
     const inputRef = React.useRef<HTMLTextAreaElement>(null);
-    const { state } = useChatContext();
 
     React.useEffect(() => {
         if (inputRef.current) {
@@ -40,7 +38,6 @@ export function PromptForm({
             }}
         >
             <Textarea
-                disabled={state != ChatState.USER_TURN}
                 ref={inputRef}
                 tabIndex={0}
                 onKeyDown={onKeyDown}
