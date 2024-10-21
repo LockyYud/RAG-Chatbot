@@ -2,75 +2,54 @@
 import { Chat } from "@/components/chat/chat";
 import ConfigBE from "@/components/chat/config";
 import { MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
-import { Button, Layout, theme } from "antd";
+import { Button, Drawer, Layout } from "antd";
 import { Content, Header } from "antd/es/layout/layout";
-import Sider from "antd/es/layout/Sider";
 import { useState } from "react";
 
 export default function Page() {
-    const [collapsed, setCollapsed] = useState(false);
-    const {
-        token: { colorBgContainer, borderRadiusLG },
-    } = theme.useToken();
-    // useEffect(() => {
-    //     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    //     const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
-    //         await deleteConversation(id);
-    //     };
+    const [open, setOpen] = useState(false);
 
-    //     // Attach the event listener
-    //     window.addEventListener("beforeunload", handleBeforeUnload);
+    const showDrawer = () => {
+        setOpen(true);
+    };
 
-    //     // Cleanup the event listener
-    //     return () => {
-    //         window.removeEventListener("beforeunload", handleBeforeUnload);
-    //     };
-    // }, [id]);
+    const onClose = () => {
+        setOpen(false);
+    };
     return (
         <div>
-            <Layout>
-                <Sider
-                    trigger={null}
-                    collapsible
-                    collapsed={collapsed}
-                    collapsedWidth={0}
-                    className="bg-transparent"
+            <Layout className="h-screen bg-background">
+                <Drawer
+                    title="Config"
+                    onClose={onClose}
+                    open={open}
+                    placement="left"
                 >
                     <ConfigBE />
-                </Sider>
-                <Layout>
-                    <Header
-                        style={{ padding: 0, background: colorBgContainer }}
-                    >
-                        <Button
-                            type="text"
-                            icon={
-                                collapsed ? (
-                                    <MenuUnfoldOutlined />
-                                ) : (
-                                    <MenuFoldOutlined />
-                                )
-                            }
-                            onClick={() => setCollapsed(!collapsed)}
-                            style={{
-                                fontSize: "16px",
-                                width: 64,
-                                height: 64,
-                            }}
-                        />
-                    </Header>
-                    <Content
+                </Drawer>
+                <Header style={{ padding: 0 }} className="bg-background">
+                    <Button
+                        type="text"
+                        icon={
+                            open ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />
+                        }
+                        onClick={showDrawer}
                         style={{
-                            // margin: '24px 16px',
-                            padding: 24,
-                            minHeight: 280,
-                            background: colorBgContainer,
-                            borderRadius: borderRadiusLG,
+                            fontSize: "16px",
+                            width: 64,
+                            height: 64,
                         }}
-                    >
-                        <Chat></Chat>
-                    </Content>
-                </Layout>
+                    />
+                </Header>
+                <Content
+                    style={{
+                        // margin: '24px 16px',
+                        minHeight: 280,
+                    }}
+                    className="bg-background"
+                >
+                    <Chat></Chat>
+                </Content>
             </Layout>
         </div>
     );

@@ -1,8 +1,8 @@
-import { cn } from '@/libs/utils';
-import { AudioOutlined } from '@ant-design/icons';
-import { Button, ConfigProvider, Tooltip } from 'antd';
+import { cn } from "@/libs/utils";
+import { AudioOutlined } from "@ant-design/icons";
+import { Button, ConfigProvider, Tooltip } from "antd";
 
-interface TextRecordProps extends React.ComponentProps<'div'> {
+interface TextRecordProps extends React.ComponentProps<"div"> {
     text: string;
     funcSend: () => void;
     funcCancel: () => void;
@@ -14,7 +14,7 @@ export function TextRecord({
     funcCancel,
 }: TextRecordProps) {
     return (
-        <div className={cn('bg-background mb-3', className)}>
+        <div className={cn("bg-background mb-3", className)}>
             <div className=" grid grid-cols-8 gap-3 px-4 bg-slate-100 min-h-18 h-14 content-center rounded-3xl">
                 <span className="col-span-6 flex flex-col justify-center h-full ">
                     {text}
@@ -30,7 +30,7 @@ export function TextRecord({
     );
 }
 
-interface RecordButtonProps extends React.ComponentProps<'button'> {
+interface RecordButtonProps extends React.ComponentProps<"button"> {
     state: boolean;
     startFunc: () => void;
     stopFunc: () => void;
@@ -43,20 +43,20 @@ export const RecordButton = ({
     stopFunc,
 }: RecordButtonProps) => {
     return (
-        <div className="absolute right-0 flex flex-col justify-center h-full p-3">
+        <div className="right-0 flex flex-col justify-center h-full p-3">
             <ConfigProvider
                 theme={{
                     components: {
                         Button: {
-                            defaultHoverBg: state ? 'red' : '',
-                            defaultHoverBorderColor: 'transparent',
+                            defaultHoverBg: state ? "red" : "",
+                            defaultHoverBorderColor: "transparent",
                         },
                     },
                 }}
             >
                 <Tooltip
                     color="red"
-                    title={state ? 'Stop record' : 'Start record'}
+                    title={state ? "Stop record" : "Start record"}
                 >
                     <Button
                         disabled={disabled}
@@ -67,15 +67,15 @@ export const RecordButton = ({
                                 startFunc();
                             }
                         }}
-                        size={!state ? 'middle' : 'large'}
+                        size={!state ? "middle" : "large"}
                         className={cn(
-                            state ? 'bg-red-500 hover:bg-red-500' : '',
+                            state ? "bg-red-500 hover:bg-red-500" : ""
                         )}
                         shape="circle"
                     >
                         <AudioOutlined
                             style={{
-                                color: state ? 'white' : 'red',
+                                color: state ? "white" : "red",
                             }}
                         />
                     </Button>

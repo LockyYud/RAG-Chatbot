@@ -1,6 +1,4 @@
 "use client";
-import { sendMessages } from "@/api/chat-api";
-import { Message } from "@/libs/types";
 import { Button, Input, Space } from "antd";
 import { useEffect, useState } from "react";
 
@@ -15,8 +13,7 @@ export default function ConfigBE() {
     }, []);
     const [save_url, set_save_url] = useState(true);
     return (
-        <div className="flex-col gap-4">
-            <h1>Config</h1>
+        <div className="flex-col">
             <Space.Compact style={{ width: "100%" }}>
                 <Input
                     placeholder="Ngrok url"
@@ -40,24 +37,6 @@ export default function ConfigBE() {
                     {save_url ? "Edit" : "Save"}
                 </Button>
             </Space.Compact>
-            <Button
-                onClick={() => {
-                    const listMessage: Message[] = [
-                        { role: "user", content: "Thủ đô của Việt Nam là" },
-                    ];
-                    sendMessages(listMessage, api_base_url);
-                }}
-            >
-                Test
-            </Button>
-            {/* <Space.Compact style={{ width: "100%" }}>
-                <Input />
-                <Button type="primary">Submit</Button>
-            </Space.Compact>
-            <Space.Compact style={{ width: "100%" }}>
-                <Input />
-                <Button type="primary">Submit</Button>
-            </Space.Compact> */}
         </div>
     );
 }
