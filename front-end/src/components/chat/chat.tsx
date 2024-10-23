@@ -11,13 +11,7 @@ import { EmptyScreen } from "./empty-screen";
 import { sendMessages } from "@/api/chat-api";
 import { useChatContext } from "@/libs/context/chat-context";
 import { message } from "antd";
-import ScrollToBottomButton from "./button-to-end";
-
-interface InforConversation {
-    grade: number;
-    messages: Array<Message>;
-    topic: string;
-}
+// import ScrollToBottomButton from "./button-to-end";
 
 export function Chat() {
     const { setState, id: conversationId, fileList } = useChatContext();
@@ -36,7 +30,7 @@ export function Chat() {
     useEffect(() => {
         if (chatPanelRef.current) {
             const resizeObserver = new ResizeObserver((entries) => {
-                for (let entry of entries) {
+                for (const entry of entries) {
                     setHeight(entry.contentRect.height); // Get the height dynamically
                 }
             });
@@ -64,6 +58,7 @@ export function Chat() {
                     setState(ChatState.USER_TURN);
                     setListMessage((prev) => [...prev, res]);
                 });
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
             } catch (error) {
                 message.error("Error when sending message, Checking your API");
                 // You can also handle the error further here, e.g. show a notification to the user
@@ -72,8 +67,7 @@ export function Chat() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [conversationId, listMessage]);
 
-    const { messagesRef, scrollRef, isAtBottom, scrollToBottom } =
-        useScrollAnchor();
+    const { messagesRef, isAtBottom, scrollToBottom } = useScrollAnchor();
     useEffect(() => {
         setNewChatId(conversationId);
     }, [conversationId, setNewChatId]);

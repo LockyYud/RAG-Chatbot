@@ -3,7 +3,7 @@ import { ChatState, Message } from "@/libs/types";
 import { cn } from "@/libs/utils";
 import { List, Spin } from "antd";
 import { BotMessage, UserMessage } from "./message";
-import { Dispatch, RefObject, SetStateAction, useEffect, useRef } from "react";
+import { Dispatch, SetStateAction } from "react";
 import { useChatContext } from "@/libs/context/chat-context";
 import { LoadingOutlined } from "@ant-design/icons";
 
@@ -11,8 +11,6 @@ export interface ChatListProps {
     messages: Message[];
     setMessages: Dispatch<SetStateAction<Message[]>>;
 }
-
-const ContainerHeight = 500;
 
 export function ChatList({ messages }: ChatListProps) {
     const { state } = useChatContext();
