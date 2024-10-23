@@ -27,7 +27,7 @@ export default function Page() {
                 >
                     <ConfigBE />
                 </Drawer>
-                <Header style={{ padding: 0 }} className="bg-background">
+                <Header style={{ padding: 0 }} className="bg-background fixed">
                     <Button
                         type="text"
                         icon={
