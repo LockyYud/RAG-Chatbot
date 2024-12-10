@@ -1,0 +1,8 @@
+.prose p {
+    margin: 0; /* Loại bỏ khoảng cách mặc định giữa các đoạn */
+    line-height: 1.5; /* Điều chỉnh chiều cao dòng nếu cần */
+}
+
+.prose > *:not(:last-child) {
+    margin-bottom: 0.5em; /* Chỉ thêm khoảng cách nhỏ giữa các phần tử */
+}

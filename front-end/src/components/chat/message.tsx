@@ -3,6 +3,7 @@
 import { spinner } from "./spinner";
 import { cn } from "@/libs/utils";
 import RobotOutlined from "@ant-design/icons/lib/icons/RobotOutlined";
+import MarkdownRenderer from "../MarkdownRender/markdown";
 
 // Different types of message bubbles.
 
@@ -23,7 +24,11 @@ export function BotMessage({ children }: { children: React.ReactNode }) {
                 <RobotOutlined />
             </div>
             <div className="ml-3 flex-1 p-3 bg-gray-100 rounded-3xl shadow-md whitespace-pre-line">
-                {children}
+                {typeof children === "string" ? (
+                    <MarkdownRenderer markdownText={children} />
+                ) : (
+                    children
+                )}
             </div>
         </div>
     );

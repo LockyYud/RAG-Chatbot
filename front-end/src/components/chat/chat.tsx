@@ -21,6 +21,7 @@ export function Chat() {
     const chatPanelRef = useRef<HTMLDivElement>(null);
     const [height, setHeight] = useState<number>(0);
     const listRef = useRef<HTMLDivElement>(null);
+    const [context, setContext] = useState<Array<string>>([]);
     useEffect(() => {
         if (listRef.current) {
             listRef.current.scrollTop = window.innerHeight;
@@ -53,10 +54,12 @@ export function Chat() {
                 sendMessages(
                     listMessage,
                     fileList,
-                    localStorage.getItem("api_base_url")
+                    localStorage.getItem("api_base_url"),
+                    localStorage.getItem("model")
                 ).then((res) => {
                     setState(ChatState.USER_TURN);
-                    setListMessage((prev) => [...prev, res]);
+                    setListMessage((prev) => [...prev, res.message]);
+                    setContext(res.context);
                 });
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars
             } catch (error) {
@@ -87,13 +90,8 @@ export function Chat() {
                             <ChatList
                                 messages={listMessage}
                                 setMessages={setListMessage}
+                                context={context}
                             />
-                            {/* <div
-                                className="fixed"
-                                style={{ marginBottom: `${height + 80}px` }}
-                            >
-                                <ScrollToBottomButton listRef={listRef} />
-                            </div> */}
                         </>
                     ) : (
                         <div className="flex flex-col justify-center gap-6">

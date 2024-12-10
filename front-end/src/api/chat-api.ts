@@ -13,6 +13,7 @@ export const sendMessages = async (
     list_message: Message[] | undefined,
     files: UploadFile[] | undefined, // Change to UploadFile[]
     API_BASE_URL: string | undefined | null,
+    model: string | undefined | null
 ) => {
     if (!API_BASE_URL) {
         message.error('API_BASE_URL is not defined');
@@ -50,7 +51,7 @@ export const sendMessages = async (
             message.error('API_BASE_URL is not defined');
             throw new Error('API_BASE_URL is not defined');
         }
-        const response = await service.post('chat', list_message[list_message.length - 1], {
+        const response = await service.post(`chat/${model}`, list_message[list_message.length - 1], {
             headers: { accept: 'application/json' }
         });
 
@@ -73,3 +74,17 @@ export const sendMessages = async (
         throw error;
     }
 };
+
+
+export const getListModels = async (
+    API_BASE_URL: string | undefined | null,
+) => {
+    if (!API_BASE_URL) {
+        message.error('API_BASE_URL is not defined');
+        throw new Error('API_BASE_URL is not defined');
+    }
+
+    service.defaults.baseURL = API_BASE_URL;
+    const list_models = await service.get(`list_models`)
+    return list_models.data;
+}
