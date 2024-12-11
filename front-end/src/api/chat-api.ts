@@ -6,7 +6,7 @@ const service = axios.create({
     withCredentials: false,
     timeout: process.env.NEXT_PUBLIC_APP_API_TIMEOUT
         ? +process.env.NEXT_PUBLIC_APP_API_TIMEOUT
-        : 60000,
+        : 60000 * 3,
 });
 
 export const sendMessages = async (
