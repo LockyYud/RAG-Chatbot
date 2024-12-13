@@ -1,11 +1,14 @@
+import { BotMessage } from "@/components/chat/message";
 import MarkdownRenderer from "@/components/MarkdownRender/markdown";
 
 export default function Page() {
-    const text = `## Câu trả lời: Thế chiến thứ 2 diễn ra từ năm 1939 đến năm 1945.\n\n**Giải thích:**\nThông tin trong đoạn văn 1 chỉ rõ rằng Chiến tranh thế giới thứ hai bắt đầu vào \"rạng sáng 1 – 9 – 1939\" khi quân đội Đức xâm lược Ba Lan và kết thúc vào năm 1945 khi các cường quốc đã tham gia các hội nghị như Hội nghị Ianta và Pốtxđam để thiết lập trật tự thế giới mới sau chiến tranh.\n\n### Lý do tại sao các lựa chọn còn lại là sai:\n- Nếu có lựa chọn nào nói rằng Thế chiến thứ 2 diễn ra vào những năm khác (biệt lập với 1939-1945), thì những lựa chọn đó sẽ sai vì không thể hiện đúng khoảng thời gian chính xác như đã đề cập trong đoạn 1. \n- Nếu có lựa chọn nói rằng Thế chiến thứ 2 kéo dài trước hoặc sau khoảng thời gian 1939-1945, cũng sẽ không đúng vì sẽ không phù hợp với các sự kiện lịch sử đã được xác nhận trong các tài liệu."
+    const text = `Câu trả lời đúng cho câu hỏi là: **C. Tạo cơ sở cho sự hình thành phong trào dân tộc theo khuynh hướng vô sản.**\n\nGiải thích:\n1. **C. Tạo cơ sở cho sự hình thành phong trào dân tộc theo khuynh hướng vô sản.** - Điều này được thể hiện rõ trong đoạn văn 2, nơi nhấn mạnh rằng Nguyễn Ái Quốc đã truyền bá chủ nghĩa Mác - Lênin, làm chuyển biến phong trào yêu nước chống Pháp từ lập trường tiểu tư sản sang lập trường vô sản. Những hoạt động và tư tưởng của Nguyễn Ái Quốc trong những năm 20 của thế kỷ XX đã tạo nền tảng vững chắc cho sự hình thành của phong trào dân tộc theo khuynh hướng vô sản.\n\n2. **Lựa chọn A: Làm cho phong trào yêu nước chuyển hẳn sang quỹ đạo cách mạng vô sản.** - Đây không hoàn toàn chính xác vì mặc dù Nguyễn Ái Quốc đã tác động mạnh mẽ đến phong trào yêu nước, nhưng \"chuyển hẳn\" có thể không phản ánh chính xác từng bước chuyển biến mà cần có thời gian và nhiều yếu tố khác.\n\n3. **Lựa chọn B: Chấm dứt tình trạng khủng hoảng về đường lối cứu nước đầu thế kỉ XX.** - Mặc dù Nguyễn Ái Quốc đã góp phần làm rõ đường lối cách mạng, nhưng không có thông tin cụ thể trong các đoạn văn cho thấy rằng ông hoàn toàn chấm dứt khủng hoảng đó. Đường lối cứu nước vẫn cần thời gian và cuộc cách mạng tiếp theo để trở nên rõ ràng và ổn định.\n\n4. **Lựa chọn D: Trực tiếp chuẩn bị đầy đủ những điều kiện cho sự ra đời của Đảng Cộng sản.** - Tuy Nguyễn Ái Quốc đã có những đóng góp lớn cho phong trào cộng sản, nhưng sự ra đời của Đảng Cộng sản Việt Nam còn phụ thuộc vào nhiều yếu tố khác từ nhiều cá nhân và tổ chức khác nhau. Lựa chọn này thể hiện một khía cạnh quan trọng nhưng không hoàn toàn chính xác so với lựa chọn C.\n\nVì những lý do trên, lựa chọn C được xem là câu trả lời đúng nhất trong bối cảnh đã được cung cấp."
 `;
     return (
         <div>
-            <MarkdownRenderer markdownText={text} />
+            <BotMessage>
+                <MarkdownRenderer markdownText={text} />
+            </BotMessage>
         </div>
     );
 }

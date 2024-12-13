@@ -1,8 +1,14 @@
+/* Reset CSS cho các phần tử trong thành phần Markdown */
+.prose * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
 .prose p {
-    margin: 0; /* Loại bỏ khoảng cách mặc định giữa các đoạn */
-    line-height: 1.5; /* Điều chỉnh chiều cao dòng nếu cần */
+    line-height: 1.5;
 }
 
 .prose > *:not(:last-child) {
-    margin-bottom: 0.5em; /* Chỉ thêm khoảng cách nhỏ giữa các phần tử */
+    margin-bottom: 0.25em;
 }
