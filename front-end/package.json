@@ -15,6 +15,7 @@
     "axios": "^1.7.7",
     "clsx": "^2.1.1",
     "next": "14.2.14",
+    "openai": "^4.85.2",
     "pdfjs-dist": "^4.7.76",
     "rc-virtual-list": "^3.14.8",
     "react": "^18",
