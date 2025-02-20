@@ -6,14 +6,23 @@ export default function ConfigBE() {
     const [model, set_model] = useState("None");
     const [api_base_url, set_url] = useState("");
     const [save_url, set_save_url] = useState(true);
+    const [api_key, set_api_key] = useState("");
     const [save_api_key, set_save_api_key] = useState(true);
     const list_model = ["gpt-4o-mini", "gpt-4o", "llama3.1-70B"];
     useEffect(() => {
-        localStorage.setItem("model", model);
         if (typeof window !== "undefined") {
-            // Now safe to use localStorage
             const savedUrl = localStorage.getItem("api_base_url") || "";
+            const savedModel = localStorage.getItem("model") || "";
+            const savedApiKey = localStorage.getItem("OPENAI_API_KEY") || "";
+
             set_url(savedUrl);
+            set_model(savedModel);
+            set_api_key(savedApiKey);
+
+            // Only save model to localStorage when it changes
+            if (model !== "None") {
+                localStorage.setItem("model", model);
+            }
         }
     }, [model]);
 
@@ -66,9 +75,9 @@ export default function ConfigBE() {
                     <Input
                         placeholder="OPENAI_API_KEY"
                         onChange={(e) => {
-                            set_url(e.target.value);
+                            set_api_key(e.target.value);
                         }}
-                        defaultValue={api_base_url}
+                        defaultValue={api_key}
                         disabled={save_api_key}
                     />
                     <Button

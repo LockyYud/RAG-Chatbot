@@ -14,11 +14,15 @@ import OpenAI from "openai";
 import tools from "./const";
 
 export function Chat() {
-    const api_key = localStorage.getItem("OPENAI_API_KEY");
+    const [apiKey, setApiKey] = useState<string>("");
     const openai = new OpenAI({
-        apiKey: api_key ?? "",
+        apiKey: apiKey ?? "",
         dangerouslyAllowBrowser: true,
     });
+    useEffect(() => {
+        const savedApiKey = localStorage.getItem("OPENAI_API_KEY") || "";
+        setApiKey(savedApiKey);
+    }, []);
     const { setState, id: conversationId } = useChatContext();
     const [listMessage, setListMessage] = useState<Message[]>([]);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
