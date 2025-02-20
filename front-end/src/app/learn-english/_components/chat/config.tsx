@@ -85,10 +85,7 @@ export default function ConfigBE() {
                         onClick={() => {
                             if (!save_api_key) {
                                 set_save_api_key(true);
-                                localStorage.setItem(
-                                    "OPENAI_API_KEY",
-                                    api_base_url
-                                );
+                                localStorage.setItem("OPENAI_API_KEY", api_key);
                             } else {
                                 set_save_api_key(false);
                             }
