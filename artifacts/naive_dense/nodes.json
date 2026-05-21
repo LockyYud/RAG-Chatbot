@@ -1,0 +1,62 @@
+[
+  {
+    "node_id": "chinh_sach_nhan_su:c1:f6ad566674",
+    "chunk_id": "chinh_sach_nhan_su:c1:f6ad566674",
+    "doc_id": "chinh_sach_nhan_su",
+    "text_for_embedding": "sổ tay nhân sự công ty mẫu 1 nghỉ phép năm nhân viên chính thức có mười hai ngày nghỉ phép năm số ngày nghỉ phép tăng thêm theo thâm niên làm việc theo chính sách của công ty nhân viên cần gửi yêu cầu nghỉ phép trên hệ thống nội bộ trước ít nhất ba ngày làm việc trừ trường hợp khẩn cấp 2 làm việc từ xa nhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng quản lý trực tiếp phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc",
+    "text_for_generation": "sổ tay nhân sự công ty mẫu 1 nghỉ phép năm nhân viên chính thức có mười hai ngày nghỉ phép năm số ngày nghỉ phép tăng thêm theo thâm niên làm việc theo chính sách của công ty nhân viên cần gửi yêu cầu nghỉ phép trên hệ thống nội bộ trước ít nhất ba ngày làm việc trừ trường hợp khẩn cấp 2 làm việc từ xa nhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng quản lý trực tiếp phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc",
+    "embedding": null,
+    "metadata": {
+      "section_title": "2. Làm việc từ xa",
+      "source_path": "datasets/sample_docs/chinh_sach_nhan_su.md"
+    }
+  },
+  {
+    "node_id": "chinh_sach_nhan_su:c2:9b2a6b16b1",
+    "chunk_id": "chinh_sach_nhan_su:c2:9b2a6b16b1",
+    "doc_id": "chinh_sach_nhan_su",
+    "text_for_embedding": "phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc",
+    "text_for_generation": "phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc",
+    "embedding": null,
+    "metadata": {
+      "section_title": "2. Làm việc từ xa",
+      "source_path": "datasets/sample_docs/chinh_sach_nhan_su.md"
+    }
+  },
+  {
+    "node_id": "quy_che_tuyen_sinh:c3:d58936b66a",
+    "chunk_id": "quy_che_tuyen_sinh:c3:d58936b66a",
+    "doc_id": "quy_che_tuyen_sinh",
+    "text_for_embedding": "quy chế tuyển sinh ngành trí tuệ nhân tạo 1 điều kiện xét tuyển thí sinh xét tuyển ngành trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm các tổ hợp xét tuyển gồm a00 a01 d01 và d07 điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký 2 hồ sơ đăng ký hồ sơ đăng ký gồm phiếu đăng ký xét tuyển bản sao học bạ hoặc kết quả thi giấy chứng nhận tốt nghiệp tạm thời và giấy tờ",
+    "text_for_generation": "quy chế tuyển sinh ngành trí tuệ nhân tạo 1 điều kiện xét tuyển thí sinh xét tuyển ngành trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm các tổ hợp xét tuyển gồm a00 a01 d01 và d07 điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký 2 hồ sơ đăng ký hồ sơ đăng ký gồm phiếu đăng ký xét tuyển bản sao học bạ hoặc kết quả thi giấy chứng nhận tốt nghiệp tạm thời và giấy tờ",
+    "embedding": null,
+    "metadata": {
+      "section_title": "3. Học phí và học bổng",
+      "source_path": "datasets/sample_docs/quy_che_tuyen_sinh.md"
+    }
+  },
+  {
+    "node_id": "quy_che_tuyen_sinh:c4:dafa793da8",
+    "chunk_id": "quy_che_tuyen_sinh:c4:dafa793da8",
+    "doc_id": "quy_che_tuyen_sinh",
+    "text_for_embedding": "xét tuyển bản sao học bạ hoặc kết quả thi giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có thí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường sau khi nộp thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc 3 học phí và học bổng học phí ngành trí tuệ nhân tạo được công bố theo từng năm học sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh học bổng duy trì được xét theo điểm trung bình học kỳ số tín chỉ hoàn thành và điểm rèn luyện",
+    "text_for_generation": "xét tuyển bản sao học bạ hoặc kết quả thi giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có thí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường sau khi nộp thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc 3 học phí và học bổng học phí ngành trí tuệ nhân tạo được công bố theo từng năm học sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh học bổng duy trì được xét theo điểm trung bình học kỳ số tín chỉ hoàn thành và điểm rèn luyện",
+    "embedding": null,
+    "metadata": {
+      "section_title": "3. Học phí và học bổng",
+      "source_path": "datasets/sample_docs/quy_che_tuyen_sinh.md"
+    }
+  },
+  {
+    "node_id": "quy_che_tuyen_sinh:c5:717969696a",
+    "chunk_id": "quy_che_tuyen_sinh:c5:717969696a",
+    "doc_id": "quy_che_tuyen_sinh",
+    "text_for_embedding": "bình học kỳ số tín chỉ hoàn thành và điểm rèn luyện",
+    "text_for_generation": "bình học kỳ số tín chỉ hoàn thành và điểm rèn luyện",
+    "embedding": null,
+    "metadata": {
+      "section_title": "3. Học phí và học bổng",
+      "source_path": "datasets/sample_docs/quy_che_tuyen_sinh.md"
+    }
+  }
+]

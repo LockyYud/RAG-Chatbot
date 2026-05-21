@@ -1,0 +1,21 @@
+[project]
+name = "rag-pipeline-lab"
+version = "0.1.0"
+description = "A full-stack lab for benchmarking RAG pipeline strategies."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+raglab = "raglab.cli.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
