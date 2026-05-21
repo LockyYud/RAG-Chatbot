@@ -5,3 +5,8 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+artifacts/
+benchmarks/results/*
+!benchmarks/results/.gitkeep
+datasets/user_data/*
+!datasets/user_data/.gitkeep

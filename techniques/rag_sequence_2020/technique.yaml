@@ -1,0 +1,35 @@
+{
+  "id": "rag_sequence_2020",
+  "name": "RAG-Sequence Inspired Pipeline",
+  "base": "naive_rag",
+  "paper": {
+    "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+    "authors": [
+      "Patrick Lewis",
+      "Ethan Perez",
+      "Aleksandra Piktus",
+      "Fabio Petroni",
+      "Vladimir Karpukhin",
+      "Naman Goyal",
+      "Heinrich Kuttler",
+      "Mike Lewis",
+      "Wen-tau Yih",
+      "Tim Rocktaschel",
+      "Sebastian Riedel",
+      "Douwe Kiela"
+    ],
+    "year": 2020,
+    "url": "https://arxiv.org/abs/2005.11401"
+  },
+  "implementation": {
+    "level": "paper_inspired",
+    "status": "runnable_with_openai_compatible_api",
+    "variant": "RAG-Sequence"
+  },
+  "stage": ["indexing", "retrieval", "context_construction", "generation"],
+  "requires": ["openai_embeddings", "openai_chat"],
+  "best_for": ["factual_qa", "prose_documents", "documentation", "policy_documents"],
+  "weak_for": ["multi_hop_questions", "table_heavy_documents", "exact_span_citations", "aggregation_questions"],
+  "config": "config.yaml",
+  "custom_register": "custom/register.py"
+}

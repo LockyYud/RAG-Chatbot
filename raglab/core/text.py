@@ -36,6 +36,26 @@ def cosine(left: dict[str, float], right: dict[str, float]) -> float:
     return numerator / (left_norm * right_norm)
 
 
+def dense_cosine(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    numerator = sum(a * b for a, b in zip(left, right, strict=True))
+    left_norm = math.sqrt(sum(value * value for value in left))
+    right_norm = math.sqrt(sum(value * value for value in right))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return numerator / (left_norm * right_norm)
+
+
+def mean_dense_vector(vectors: list[list[float]]) -> list[float]:
+    if not vectors:
+        return []
+    width = len(vectors[0])
+    if any(len(vector) != width for vector in vectors):
+        raise ValueError("Cannot average dense vectors with different dimensions")
+    return [sum(vector[index] for vector in vectors) / len(vectors) for index in range(width)]
+
+
 def term_vector(text: str) -> dict[str, float]:
     counts = Counter(tokenize(text))
     total = sum(counts.values()) or 1

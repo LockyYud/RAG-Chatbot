@@ -1,0 +1,21 @@
+{
+  "id": "rag_fusion_2024",
+  "name": "RAG-Fusion",
+  "base": "rag_sequence_2020",
+  "paper": {
+    "title": "RAG-Fusion: a New Take on Retrieval-Augmented Generation",
+    "authors": ["Zackary Rackauckas"],
+    "year": 2024,
+    "url": "https://arxiv.org/abs/2402.03367"
+  },
+  "implementation": {
+    "level": "paper_inspired",
+    "status": "runnable_with_openai_compatible_api"
+  },
+  "stage": ["query_transformation", "retrieval", "reranking"],
+  "requires": ["openai_embeddings", "openai_chat"],
+  "best_for": ["query_wording_mismatch", "high_recall_retrieval", "heterogeneous_documents"],
+  "weak_for": ["strict_latency_constraints", "tiny_corpora", "exact_keyword_lookup"],
+  "config": "config.yaml",
+  "custom_register": "custom/register.py"
+}

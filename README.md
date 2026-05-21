@@ -1,69 +1,100 @@
 # RAG Pipeline Lab
 
-`rag-pipeline-lab` is a runnable MVP of a full-stack RAG strategy lab. It is designed to configure, run, and benchmark end-to-end RAG pipelines from raw documents to grounded answers, instead of demonstrating isolated RAG techniques one by one.
+`rag-pipeline-lab` is a **paper-driven, evaluation-first RAG Lab** for turning RAG research ideas into runnable end-to-end pipelines.
 
-The project has two execution paths:
+Repo này là một paper-driven, evaluation-first RAG Lab nhằm chuyển các ý tưởng và chiến lược RAG từ research papers thành những pipeline RAG hoàn chỉnh, có thể chạy end-to-end từ raw documents đến final answers. Thay vì chỉ implement lại code của từng paper một cách rời rạc, repo chuẩn hóa các strategy ở nhiều giai đoạn như data processing, chunking, enrichment, indexing, retrieval, reranking, context construction, generation và verification, sau đó benchmark chúng trên cùng một evaluation protocol. Mục tiêu là giúp AI Engineer/AI Researcher so sánh thực nghiệm các pipeline RAG theo chất lượng trả lời, citation accuracy, faithfulness, latency và cost, từ đó hiểu rõ strategy nào phù hợp với từng loại tài liệu và use case production.
 
-- **Local baseline path**: zero-dependency, useful for inspecting architecture, testing pipeline orchestration, and validating reports.
-- **Real RAG path**: OpenAI-compatible embeddings and chat generation, useful for actual strategy experiments.
-
-The local baseline is not a meaningful empirical benchmark for dense retrieval or answer quality. Use `configs/pipelines/openai_rag.yaml` when you want real embedding and generation behavior.
-
-## What It Benchmarks
-
-The lab compares complete pipeline strategies across:
-
-- document parsing and cleaning
-- fixed, recursive, heading-aware, and parent-child chunking
-- section-title enrichment
-- BM25, term-vector dense baseline, OpenAI embedding retrieval, and hybrid retrieval
-- lexical-overlap reranking
-- citation-aware context construction
-- extractive fallback generation and OpenAI-compatible chat generation with required citations
-- citation coverage verification
-- Recall@k, MRR, hit rate, citation accuracy, latency, context tokens, and local cost estimates
-
-## Pipeline Shape
+## Repository Shape
 
 ```text
-raw documents
-  -> parser
-  -> cleaners
-  -> chunker
-  -> enricher
-  -> indexed nodes / artifacts
-  -> retriever
-  -> reranker
-  -> context builder
-  -> generator
-  -> verifier
-  -> metrics / reports
+raglab/              # Engine: stable interfaces and base components
+  core/
+  processing/
+  indexing/
+  inference/
+  cli/
+
+techniques/          # Paper/method implementations
+  _template/
+  naive_rag/
+  rag_sequence_2020/
+  parent_child/
+
+evaluation/          # First-class evaluation protocol and runner
+  metrics/
+  protocol/
+  runner.py
+
+datasets/            # Sample data plus bring-your-own-data area
+  sample/
+  user_data/
+
+benchmarks/          # Benchmark runner and ignored local results
+  run_all.py
+  results/
 ```
 
-## Included Strategies
+## Technique Catalog
 
-| Pipeline | Chunking | Retrieval | Reranking | Generation | Verification |
-| --- | --- | --- | --- | --- | --- |
-| `naive_dense` | fixed-size | dense term-vector baseline | none | citation extractive | citation coverage |
-| `heading_hybrid` | heading-aware | hybrid dense + BM25 | lexical overlap | citation extractive | citation coverage |
-| `parent_child_bm25` | parent-child | BM25 | lexical overlap | citation extractive | citation coverage |
-| `openai_rag` | heading-aware | OpenAI embeddings + BM25 hybrid | lexical overlap | OpenAI-compatible chat | citation coverage |
+Each technique owns its paper analysis, metadata, runnable config, and optional custom code:
 
-## Sample Benchmark
+```text
+techniques/<technique_id>/
+  README.md
+  technique.yaml
+  config.yaml
+  custom/
+    register.py
+```
 
-Current sample reports use the included Vietnamese documents and QA dataset.
+Current techniques:
 
-| Pipeline | Recall@5 | MRR | Citation Accuracy | Avg Latency ms | Avg Context Tokens |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `naive_dense` | 1.000 | 1.000 | 0.333 | 0.550 | 354.0 |
-| `heading_hybrid` | 1.000 | 1.000 | 1.000 | 0.738 | 286.3 |
-| `parent_child_bm25` | 1.000 | 1.000 | 1.000 | 0.618 | 286.3 |
+| Technique | Type | Base | Config |
+| --- | --- | --- | --- |
+| `naive_rag` | baseline | none | `techniques/naive_rag/config.yaml` |
+| `rag_sequence_2020` | paper-inspired RAG-Sequence from [arXiv:2005.11401](https://arxiv.org/abs/2005.11401) | `naive_rag` | `techniques/rag_sequence_2020/config.yaml` |
+| `parent_child` | production RAG pattern | `naive_rag` | `techniques/parent_child/config.yaml` |
+| `hyde_2022` | paper-inspired HyDE from [arXiv:2212.10496](https://arxiv.org/abs/2212.10496) | `rag_sequence_2020` | `techniques/hyde_2022/config.yaml` |
+| `rag_fusion_2024` | paper-inspired RAG-Fusion from [arXiv:2402.03367](https://arxiv.org/abs/2402.03367) | `rag_sequence_2020` | `techniques/rag_fusion_2024/config.yaml` |
+| `self_rag_2023` | concept-only Self-RAG-inspired critique verifier from [arXiv:2310.11511](https://arxiv.org/abs/2310.11511) | `parent_child` | `techniques/self_rag_2023/config.yaml` |
 
-The dataset is intentionally small, so these numbers should be read as a smoke benchmark and a comparison fixture, not as a general RAG leaderboard.
+List techniques from CLI:
+
+```bash
+python -m raglab.cli.main techniques list
+python -m raglab.cli.main techniques show rag_sequence_2020
+```
+
+## Quick Start
+
+Run the local baseline on the sample dataset:
+
+```bash
+python -m raglab.cli.main ingest \
+  --config techniques/naive_rag/config.yaml \
+  --input datasets/sample/docs \
+  --output artifacts/naive_rag
+
+python -m raglab.cli.main eval \
+  --config techniques/naive_rag/config.yaml \
+  --artifact artifacts/naive_rag \
+  --dataset datasets/sample/qa.jsonl \
+  --output benchmarks/results/naive_rag_eval.json
+```
+
+Run multiple techniques:
+
+```bash
+python benchmarks/run_all.py \
+  --techniques naive_rag parent_child \
+  --docs datasets/sample/docs \
+  --qa datasets/sample/qa.jsonl \
+  --output benchmarks/results/sample
+```
 
 ## Real OpenAI-Compatible Path
 
-Create `.env` from `.env.example`:
+Some paper-driven techniques require real embeddings or model generation. Create `.env` from `.env.example`:
 
 ```bash
 OPENAI_API_KEY=...
@@ -72,65 +103,42 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_CHAT_MODEL=gpt-4.1-mini
 ```
 
-Then build real embedding artifacts and query with a real model:
+Then run a paper-driven pipeline:
 
 ```bash
 python -m raglab.cli.main ingest \
-  --config configs/pipelines/openai_rag.yaml \
-  --input datasets/sample_docs \
-  --output artifacts/openai_rag
-
-python -m raglab.cli.main query \
-  --config configs/pipelines/openai_rag.yaml \
-  --artifact artifacts/openai_rag \
-  --query "Điều kiện xét tuyển ngành trí tuệ nhân tạo là gì?"
-```
-
-For meaningful strategy comparison, replace `datasets/benchmark_qa/qa.jsonl` with at least 50-100 labeled QA pairs. The included `datasets/sample_qa/qa.jsonl` has only 3 rows and is strictly for smoke tests.
-
-## Quick Start
-
-```bash
-python -m raglab.cli.main ingest \
-  --config configs/pipelines/heading_hybrid.yaml \
-  --input datasets/sample_docs \
-  --output artifacts/heading_hybrid
-
-python -m raglab.cli.main query \
-  --config configs/pipelines/heading_hybrid.yaml \
-  --artifact artifacts/heading_hybrid \
-  --query "Điều kiện xét tuyển ngành trí tuệ nhân tạo là gì?"
+  --config techniques/rag_sequence_2020/config.yaml \
+  --input datasets/sample/docs \
+  --output artifacts/rag_sequence_2020
 
 python -m raglab.cli.main eval \
-  --config configs/pipelines/heading_hybrid.yaml \
-  --artifact artifacts/heading_hybrid \
-  --dataset datasets/sample_qa/qa.jsonl \
-  --output reports/heading_hybrid_eval.json
+  --config techniques/rag_sequence_2020/config.yaml \
+  --artifact artifacts/rag_sequence_2020 \
+  --dataset datasets/sample/qa.jsonl \
+  --output benchmarks/results/rag_sequence_2020_eval.json
 ```
 
-Compare multiple strategies:
+## Bring Your Own Dataset
+
+Use the format described in [datasets/README.md](datasets/README.md). For meaningful comparison, use at least 50-100 labeled QA pairs.
 
 ```bash
-python -m raglab.cli.main compare \
-  --runs \
-    configs/pipelines/naive_dense.yaml=artifacts/naive_dense \
-    configs/pipelines/heading_hybrid.yaml=artifacts/heading_hybrid \
-    configs/pipelines/parent_child_bm25.yaml=artifacts/parent_child_bm25 \
-  --dataset datasets/sample_qa/qa.jsonl \
-  --output reports/comparison.json
+python benchmarks/run_all.py \
+  --techniques naive_rag parent_child rag_sequence_2020 hyde_2022 rag_fusion_2024 self_rag_2023 \
+  --docs datasets/user_data/my_docs \
+  --qa datasets/user_data/my_qa.jsonl \
+  --output benchmarks/results/my_dataset
 ```
 
-## Development
+## Add A New Paper Technique
 
-Install test dependencies when needed:
+1. Copy `techniques/_template/`.
+2. Rename the folder with a stable descriptive id, e.g. `hyde_2022`.
+3. Fill `technique.yaml`, including `base`, `stage`, `requires`, `best_for`, and `weak_for`.
+4. Write the paper analysis in `README.md`.
+5. Compose the pipeline in `config.yaml`.
+6. Add custom strategy code under `custom/` only when base components are not enough.
+7. Register custom code through `custom/register.py`.
+8. Run against the same dataset as the baselines.
 
-```bash
-python -m pip install -e ".[dev]"
-python -m pytest -q
-```
-
-The config files are JSON-compatible YAML files. This keeps the project dependency-free while preserving the familiar pipeline config layout.
-
-## Scope
-
-This repo is a portfolio-ready MVP, not a production RAG stack. The local reports are architecture smoke tests. Empirical claims should use OpenAI-compatible embeddings/chat plus a larger labeled dataset. Planned extensions include vector stores, LLM reranking, PDF layout parsing, semantic chunking, HyDE or multi-query retrieval, and LLM-as-judge verification.
+Be explicit about whether a technique is a **faithful reproduction**, **paper-inspired adaptation**, **production pattern**, or **baseline**.

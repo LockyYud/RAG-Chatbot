@@ -6,7 +6,8 @@ from pathlib import Path
 
 from raglab.core.io import write_json
 from raglab.core.pipeline import ingest, query
-from raglab.evaluation.runner import run_eval
+from raglab.core.techniques import get_technique, list_techniques
+from evaluation.runner import run_eval
 
 
 def main() -> None:
@@ -36,6 +37,12 @@ def main() -> None:
     compare_parser.add_argument("--output", required=True)
     compare_parser.add_argument("--top-k", type=int, default=5)
 
+    techniques_parser = subparsers.add_parser("techniques", help="List or inspect paper-driven techniques")
+    techniques_subparsers = techniques_parser.add_subparsers(dest="techniques_command", required=True)
+    techniques_subparsers.add_parser("list", help="List registered technique metadata")
+    show_parser = techniques_subparsers.add_parser("show", help="Show one technique metadata")
+    show_parser.add_argument("technique_id")
+
     args = parser.parse_args()
     if args.command == "ingest":
         _print(ingest(args.config, args.input, args.output))
@@ -46,6 +53,11 @@ def main() -> None:
         _print(run_eval(args.config, args.artifact, args.dataset, args.output, args.top_k)["metrics"])
     elif args.command == "compare":
         _compare(args.runs, args.dataset, args.output, args.top_k)
+    elif args.command == "techniques":
+        if args.techniques_command == "list":
+            _print({"techniques": list_techniques()})
+        elif args.techniques_command == "show":
+            _print(get_technique(args.technique_id))
 
 
 def _compare(runs: list[str], dataset: str, output: str, top_k: int) -> None:

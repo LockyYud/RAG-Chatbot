@@ -1,0 +1,24 @@
+{
+  "id": "standard_rag_eval",
+  "description": "Default protocol for comparing paper-driven RAG techniques on one dataset.",
+  "required_dataset_fields": [
+    "question_id",
+    "question",
+    "ground_truth_answer",
+    "expected_doc_ids",
+    "expected_chunk_ids",
+    "expected_citations"
+  ],
+  "metrics": [
+    "recall_at_5",
+    "hit_rate",
+    "mrr",
+    "citation_accuracy",
+    "latency_ms_avg",
+    "context_tokens_avg",
+    "prompt_tokens_avg",
+    "completion_tokens_avg",
+    "estimated_cost_avg"
+  ],
+  "minimum_recommended_questions": 50
+}

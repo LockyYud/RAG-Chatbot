@@ -5,7 +5,7 @@ from collections import Counter
 
 from raglab.core.interfaces import BaseRetriever
 from raglab.core.schema import IndexedNode, RetrievalResult
-from raglab.core.text import cosine, term_vector, tokenize
+from raglab.core.text import cosine, dense_cosine, term_vector, tokenize
 from raglab.indexing.embeddings import OpenAIEmbedder
 
 
@@ -88,7 +88,7 @@ class OpenAIDenseRetriever(BaseRetriever):
 
     def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
         query_vector = self.embedder.embed_texts([query])[0]
-        scored = [(node, _dense_cosine(query_vector, node.embedding or [])) for node in self.nodes]
+        scored = [(node, dense_cosine(query_vector, node.embedding or [])) for node in self.nodes]
         return _to_results(scored, top_k)
 
 
@@ -144,14 +144,3 @@ def _to_results(scored: list[tuple[IndexedNode, float]], top_k: int) -> list[Ret
             )
         )
     return results
-
-
-def _dense_cosine(left: list[float], right: list[float]) -> float:
-    if not left or not right or len(left) != len(right):
-        return 0.0
-    numerator = sum(a * b for a, b in zip(left, right, strict=True))
-    left_norm = math.sqrt(sum(value * value for value in left))
-    right_norm = math.sqrt(sum(value * value for value in right))
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
-    return numerator / (left_norm * right_norm)

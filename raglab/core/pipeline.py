@@ -19,6 +19,7 @@ from raglab.core.registry import (
     verifiers,
 )
 from raglab.core.schema import DocumentBlock, IndexedNode, RAGAnswer
+from raglab.core.techniques import register_custom_for_config
 from raglab.core.text import token_count
 from raglab.indexing.artifacts import load_nodes, save_nodes
 from raglab.indexing.embeddings import OpenAIEmbedder
@@ -27,6 +28,7 @@ from raglab.providers.env import env_float
 
 def ingest(config_path: str, input_path: str, output_path: str) -> dict[str, Any]:
     register_defaults()
+    register_custom_for_config(config_path)
     config = load_config(config_path)
     parser = parsers.create(get_stage(config, "processing.parser", {"type": "text"}))
     cleaner_specs = get_stage(config, "processing.cleaners", [])
@@ -69,6 +71,7 @@ def ingest(config_path: str, input_path: str, output_path: str) -> dict[str, Any
 
 def query(config_path: str, artifact_path: str, question: str) -> RAGAnswer:
     register_defaults()
+    register_custom_for_config(config_path)
     config = load_config(config_path)
     nodes = load_nodes(artifact_path)
 
@@ -87,33 +90,49 @@ def query(config_path: str, artifact_path: str, question: str) -> RAGAnswer:
 
     started = time.perf_counter()
     retrieved = retriever.retrieve(question, top_k)
+    retrieval_runtime = getattr(retriever, "last_metadata", {})
     reranked = rerankers.create(reranker_spec).rerank(question, retrieved, rerank_top_k)
     context = context_builders.create(context_spec).build_context(question, reranked)
     answer = generators.create(generator_spec).generate(question, context)
-    verification = verifiers.create(verifier_spec).verify(answer, context)
+    verifier = verifiers.create(verifier_spec)
+    verification = verifier.verify(answer, context)
+    verification_runtime = getattr(verifier, "last_metadata", {})
     elapsed_ms = (time.perf_counter() - started) * 1000
-    retrieval_cost = _retrieval_cost(question, retriever_spec)
+    retrieval_cost = _retrieval_cost(question, retriever_spec, retrieval_runtime)
     answer.metadata.update(
         {
             "latency_ms": round(elapsed_ms, 3),
             "retrieved_count": len(retrieved),
             "context_token_count": context.token_count,
+            "retrieval_runtime": retrieval_runtime,
             "retrieval_cost_estimate": retrieval_cost,
-            "cost_estimate": _cost_estimate(answer, retrieval_cost),
+            "verification_runtime": verification_runtime,
+            "cost_estimate": _cost_estimate(answer, retrieval_cost, verification_runtime),
             "verification": verification.to_dict(),
         }
     )
     return answer
 
 
-def _cost_estimate(answer: RAGAnswer, retrieval_cost: dict[str, Any]) -> dict[str, Any]:
+def _cost_estimate(
+    answer: RAGAnswer,
+    retrieval_cost: dict[str, Any],
+    verification_runtime: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    verification_runtime = verification_runtime or {}
+    verification_cost = float(verification_runtime.get("estimated_cost", 0.0))
     if "estimated_llm_cost" in answer.metadata:
         return {
             "currency": "USD",
-            "amount": round(float(answer.metadata["estimated_llm_cost"]) + float(retrieval_cost["amount"]), 8),
-            "basis": "chat + query embedding estimates from .env per-1K-token values",
+            "amount": round(
+                float(answer.metadata["estimated_llm_cost"]) + float(retrieval_cost["amount"]) + verification_cost,
+                8,
+            ),
+            "basis": "generation + retrieval + verification estimates from .env per-1K-token values",
         }
     if retrieval_cost["amount"] > 0:
+        retrieval_cost = dict(retrieval_cost)
+        retrieval_cost["amount"] = round(float(retrieval_cost["amount"]) + verification_cost, 8)
         return retrieval_cost
     return {
         "currency": "USD",
@@ -122,16 +141,24 @@ def _cost_estimate(answer: RAGAnswer, retrieval_cost: dict[str, Any]) -> dict[st
     }
 
 
-def _retrieval_cost(question: str, retriever_spec: dict[str, Any] | str | None) -> dict[str, Any]:
+def _retrieval_cost(
+    question: str,
+    retriever_spec: dict[str, Any] | str | None,
+    retrieval_runtime: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     type_name = retriever_spec.get("type") if isinstance(retriever_spec, dict) else retriever_spec
-    if type_name not in {"openai_dense", "openai_hybrid"}:
-        return {"currency": "USD", "amount": 0.0, "basis": "retriever does not call embedding API"}
-    tokens = token_count(question)
+    retrieval_runtime = retrieval_runtime or {}
+    if type_name not in {"openai_dense", "openai_hybrid", "hyde", "hyde_retriever", "rag_fusion", "rag_fusion_retriever"}:
+        runtime_cost = float(retrieval_runtime.get("estimated_cost", 0.0))
+        return {"currency": "USD", "amount": runtime_cost, "basis": "custom retriever runtime estimate"}
+    embedding_inputs = int(retrieval_runtime.get("embedding_input_count", 1))
+    tokens = int(retrieval_runtime.get("estimated_embedding_tokens", token_count(question) * embedding_inputs))
     amount = round(tokens / 1000 * env_float("OPENAI_EMBEDDING_INPUT_COST_PER_1K", 0.0), 8)
+    amount += float(retrieval_runtime.get("estimated_cost", 0.0))
     return {
         "currency": "USD",
-        "amount": amount,
-        "basis": "OPENAI_EMBEDDING_INPUT_COST_PER_1K from .env; query embedding only",
+        "amount": round(amount, 8),
+        "basis": "retrieval-time LLM calls plus OPENAI_EMBEDDING_INPUT_COST_PER_1K from .env",
         "estimated_query_embedding_tokens": tokens,
     }
 

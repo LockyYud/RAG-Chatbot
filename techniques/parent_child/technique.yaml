@@ -1,0 +1,21 @@
+{
+  "id": "parent_child",
+  "name": "Parent-Child Retrieval",
+  "base": "naive_rag",
+  "paper": {
+    "title": null,
+    "authors": [],
+    "year": null,
+    "url": null
+  },
+  "implementation": {
+    "level": "production_pattern",
+    "status": "runnable"
+  },
+  "stage": ["chunking", "indexing", "retrieval", "context_construction"],
+  "requires": [],
+  "best_for": ["structured_documents", "policy_documents", "legal_like_sections"],
+  "weak_for": ["short_faq", "strict_latency_constraints"],
+  "config": "config.yaml",
+  "custom_register": null
+}

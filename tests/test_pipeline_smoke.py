@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from raglab.core.pipeline import ingest, query
-from raglab.evaluation.runner import run_eval
+from evaluation.runner import run_eval
 
 
 def test_ingest_query_eval_smoke(tmp_path: Path) -> None:
@@ -11,14 +11,14 @@ def test_ingest_query_eval_smoke(tmp_path: Path) -> None:
     report = tmp_path / "eval.json"
 
     manifest = ingest(
-        "configs/pipelines/heading_hybrid.yaml",
-        "datasets/sample_docs",
+        "techniques/parent_child/config.yaml",
+        "datasets/sample/docs",
         str(artifact),
     )
 
     assert manifest["node_count"] > 0
     answer = query(
-        "configs/pipelines/heading_hybrid.yaml",
+        "techniques/parent_child/config.yaml",
         str(artifact),
         "Điều kiện xét tuyển ngành trí tuệ nhân tạo là gì?",
     )
@@ -28,9 +28,9 @@ def test_ingest_query_eval_smoke(tmp_path: Path) -> None:
     assert answer.metadata["verification"]["citation_coverage"] == 1.0
 
     evaluation = run_eval(
-        "configs/pipelines/heading_hybrid.yaml",
+        "techniques/parent_child/config.yaml",
         str(artifact),
-        "datasets/sample_qa/qa.jsonl",
+        "datasets/sample/qa.jsonl",
         str(report),
     )
     assert evaluation["metrics"]["queries"] == 3

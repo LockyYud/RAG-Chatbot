@@ -1,0 +1,21 @@
+{
+  "id": "naive_rag",
+  "name": "Naive RAG Baseline",
+  "base": null,
+  "paper": {
+    "title": null,
+    "authors": [],
+    "year": null,
+    "url": null
+  },
+  "implementation": {
+    "level": "baseline",
+    "status": "runnable"
+  },
+  "stage": ["chunking", "retrieval", "context_construction", "generation"],
+  "requires": [],
+  "best_for": ["smoke_tests", "dataset_format_validation"],
+  "weak_for": ["empirical_dense_retrieval_claims", "production_answer_quality"],
+  "config": "config.yaml",
+  "custom_register": null
+}

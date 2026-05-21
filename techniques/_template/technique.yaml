@@ -1,0 +1,21 @@
+{
+  "id": "technique_id",
+  "name": "Technique Name",
+  "base": null,
+  "paper": {
+    "title": "Paper Title",
+    "authors": [],
+    "year": null,
+    "url": null
+  },
+  "implementation": {
+    "level": "paper_inspired",
+    "status": "template"
+  },
+  "stage": ["retrieval"],
+  "requires": ["openai_embeddings", "openai_chat"],
+  "best_for": [],
+  "weak_for": [],
+  "config": "config.yaml",
+  "custom_register": "custom/register.py"
+}

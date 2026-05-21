@@ -1,0 +1,36 @@
+{
+  "name": "self_rag_2023",
+  "processing": {
+    "parser": {"type": "markdown"},
+    "cleaners": [
+      {"type": "vietnamese_normalizer"},
+      {"type": "whitespace_cleaner"}
+    ],
+    "chunker": {"type": "parent_child", "params": {"child_size": 120, "child_overlap": 20}},
+    "enrichers": [{"type": "section_title"}]
+  },
+  "inference": {
+    "retriever": {"type": "bm25", "params": {"top_k": 8}},
+    "reranker": {"type": "lexical_overlap", "params": {"top_k": 5, "weight": 0.25}},
+    "context_builder": {"type": "citation_context", "params": {"max_tokens": 2400}},
+    "generator": {
+      "type": "openai_chat",
+      "params": {
+        "model": "${OPENAI_CHAT_MODEL:-gpt-4.1-mini}",
+        "temperature": 0,
+        "max_tokens": 700
+      }
+    },
+    "verifier": {
+      "type": "self_rag_critique",
+      "params": {
+        "model": "${OPENAI_CHAT_MODEL:-gpt-4.1-mini}",
+        "temperature": 0,
+        "max_tokens": 350
+      }
+    }
+  },
+  "evaluation": {
+    "metrics": ["recall_at_5", "mrr", "citation_accuracy", "latency", "token_usage", "estimated_cost"]
+  }
+}
