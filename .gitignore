@@ -8,5 +8,8 @@ build/
 artifacts/
 benchmarks/results/*
 !benchmarks/results/.gitkeep
+!benchmarks/results/sample_research/
+!benchmarks/results/sample_research/**
 datasets/user_data/*
 !datasets/user_data/.gitkeep
+datasets/generated/*

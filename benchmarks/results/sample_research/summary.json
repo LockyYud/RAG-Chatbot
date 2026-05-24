@@ -1,0 +1,40 @@
+{
+  "runs": [
+    {
+      "technique": "naive_rag",
+      "config": "techniques/naive_rag/config.yaml",
+      "artifact": "benchmarks/results/sample_research/artifacts/naive_rag",
+      "report": "benchmarks/results/sample_research/naive_rag_eval.json",
+      "status": "ok",
+      "node_count": 5,
+      "recall_at_5": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "citation_accuracy": 0.333333,
+      "latency_ms_avg": 0.469,
+      "context_tokens_avg": 354.0,
+      "prompt_tokens_avg": 0.0,
+      "completion_tokens_avg": 0.0,
+      "estimated_cost_avg": 0.0,
+      "queries": 3
+    },
+    {
+      "technique": "parent_child",
+      "config": "techniques/parent_child/config.yaml",
+      "artifact": "benchmarks/results/sample_research/artifacts/parent_child",
+      "report": "benchmarks/results/sample_research/parent_child_eval.json",
+      "status": "ok",
+      "node_count": 7,
+      "recall_at_5": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "citation_accuracy": 1.0,
+      "latency_ms_avg": 0.466,
+      "context_tokens_avg": 286.333333,
+      "prompt_tokens_avg": 0.0,
+      "completion_tokens_avg": 0.0,
+      "estimated_cost_avg": 0.0,
+      "queries": 3
+    }
+  ]
+}

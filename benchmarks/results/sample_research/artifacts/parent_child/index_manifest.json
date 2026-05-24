@@ -1,0 +1,21 @@
+{
+  "artifact_version": "2",
+  "created_at": "2026-05-22T04:49:41.103341+00:00",
+  "pipeline_name": "parent_child",
+  "config_path": "techniques/parent_child/config.yaml",
+  "config_hash": "c737e04920d3a14e",
+  "input_path": "datasets/sample/docs",
+  "documents": [
+    "chinh_sach_nhan_su",
+    "quy_che_tuyen_sinh"
+  ],
+  "document_count": 2,
+  "block_count": 17,
+  "chunk_count": 7,
+  "node_count": 7,
+  "embedding": {
+    "type": "none"
+  },
+  "embedding_model": null,
+  "store_backend": null
+}

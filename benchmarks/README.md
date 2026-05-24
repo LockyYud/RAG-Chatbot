@@ -2,7 +2,8 @@
 
 Benchmark outputs live in `benchmarks/results/`.
 
-The directory is ignored by git because results depend on local datasets, model choices, API providers, and pricing configuration.
+Most of the directory is ignored by git because results depend on local datasets, model choices, API providers, and
+pricing configuration. The tiny `sample_research` run is committed as a reproducible smoke report.
 
 Run a single technique:
 
@@ -26,5 +27,13 @@ python benchmarks/run_all.py \
   --techniques naive_rag parent_child \
   --docs datasets/sample/docs \
   --qa datasets/sample/qa.jsonl \
-  --output benchmarks/results/sample
+  --output benchmarks/results/sample \
+  --mode full_rag
 ```
+
+Outputs:
+
+- `<technique>_eval.json`: per-technique report with metrics, predictions, failures, cost summary, and run metadata.
+- `summary.json`: machine-readable aggregate.
+- `summary.csv`: spreadsheet-friendly aggregate.
+- `summary.md`: README-friendly benchmark table.

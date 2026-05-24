@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from raglab.core.schema import (
     BuiltContext,
@@ -40,6 +41,24 @@ class BaseEnricher(ABC):
 class BaseRetriever(ABC):
     @abstractmethod
     def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
+        raise NotImplementedError
+
+
+class BaseVectorStore(ABC):
+    @abstractmethod
+    def build(self, nodes: list[IndexedNode]) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def save(self, path: str | Path) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def load(self, path: str | Path, nodes: list[IndexedNode]) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def search(self, query_embedding: list[float], top_k: int) -> list[tuple[IndexedNode, float]]:
         raise NotImplementedError
 
 

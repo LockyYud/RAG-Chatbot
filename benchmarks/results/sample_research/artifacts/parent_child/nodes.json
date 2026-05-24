@@ -1,0 +1,100 @@
+[
+  {
+    "node_id": "chinh_sach_nhan_su:c1:a0b4970e4b",
+    "chunk_id": "chinh_sach_nhan_su:c1:a0b4970e4b",
+    "doc_id": "chinh_sach_nhan_su",
+    "text_for_embedding": "Sổ tay nhân sự công ty mẫu\n\nsổ tay nhân sự công ty mẫu",
+    "text_for_generation": "# Sổ tay nhân sự công ty mẫu",
+    "embedding": null,
+    "metadata": {
+      "parent_text": "# Sổ tay nhân sự công ty mẫu",
+      "section_title": "Sổ tay nhân sự công ty mẫu",
+      "parent_token_count": 7,
+      "source_path": "datasets/sample/docs/chinh_sach_nhan_su.md"
+    }
+  },
+  {
+    "node_id": "chinh_sach_nhan_su:c2:c70bc027bd",
+    "chunk_id": "chinh_sach_nhan_su:c2:c70bc027bd",
+    "doc_id": "chinh_sach_nhan_su",
+    "text_for_embedding": "1. Nghỉ phép năm\n\n1 nghỉ phép năm nhân viên chính thức có mười hai ngày nghỉ phép năm số ngày nghỉ phép tăng thêm theo thâm niên làm việc theo chính sách của công ty nhân viên cần gửi yêu cầu nghỉ phép trên hệ thống nội bộ trước ít nhất ba ngày làm việc trừ trường hợp khẩn cấp",
+    "text_for_generation": "## 1. Nghỉ phép năm\n\nNhân viên chính thức có mười hai ngày nghỉ phép năm. Số ngày nghỉ phép tăng thêm theo thâm niên làm việc theo chính sách của công ty.\n\nNhân viên cần gửi yêu cầu nghỉ phép trên hệ thống nội bộ trước ít nhất ba ngày làm việc, trừ trường hợp khẩn cấp.",
+    "embedding": null,
+    "metadata": {
+      "parent_text": "## 1. Nghỉ phép năm\n\nNhân viên chính thức có mười hai ngày nghỉ phép năm. Số ngày nghỉ phép tăng thêm theo thâm niên làm việc theo chính sách của công ty.\n\nNhân viên cần gửi yêu cầu nghỉ phép trên hệ thống nội bộ trước ít nhất ba ngày làm việc, trừ trường hợp khẩn cấp.",
+      "section_title": "1. Nghỉ phép năm",
+      "parent_token_count": 57,
+      "source_path": "datasets/sample/docs/chinh_sach_nhan_su.md"
+    }
+  },
+  {
+    "node_id": "chinh_sach_nhan_su:c3:f8b07b2829",
+    "chunk_id": "chinh_sach_nhan_su:c3:f8b07b2829",
+    "doc_id": "chinh_sach_nhan_su",
+    "text_for_embedding": "2. Làm việc từ xa\n\n2 làm việc từ xa nhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng quản lý trực tiếp phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc",
+    "text_for_generation": "## 2. Làm việc từ xa\n\nNhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng.\n\nQuản lý trực tiếp phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc.",
+    "embedding": null,
+    "metadata": {
+      "parent_text": "## 2. Làm việc từ xa\n\nNhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng.\n\nQuản lý trực tiếp phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc.",
+      "section_title": "2. Làm việc từ xa",
+      "parent_token_count": 53,
+      "source_path": "datasets/sample/docs/chinh_sach_nhan_su.md"
+    }
+  },
+  {
+    "node_id": "quy_che_tuyen_sinh:c4:54e77f8a0c",
+    "chunk_id": "quy_che_tuyen_sinh:c4:54e77f8a0c",
+    "doc_id": "quy_che_tuyen_sinh",
+    "text_for_embedding": "Quy chế tuyển sinh ngành Trí tuệ nhân tạo\n\nquy chế tuyển sinh ngành trí tuệ nhân tạo",
+    "text_for_generation": "# Quy chế tuyển sinh ngành Trí tuệ nhân tạo",
+    "embedding": null,
+    "metadata": {
+      "parent_text": "# Quy chế tuyển sinh ngành Trí tuệ nhân tạo",
+      "section_title": "Quy chế tuyển sinh ngành Trí tuệ nhân tạo",
+      "parent_token_count": 9,
+      "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md"
+    }
+  },
+  {
+    "node_id": "quy_che_tuyen_sinh:c5:27f418026d",
+    "chunk_id": "quy_che_tuyen_sinh:c5:27f418026d",
+    "doc_id": "quy_che_tuyen_sinh",
+    "text_for_embedding": "1. Điều kiện xét tuyển\n\n1 điều kiện xét tuyển thí sinh xét tuyển ngành trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm các tổ hợp xét tuyển gồm a00 a01 d01 và d07 điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký",
+    "text_for_generation": "## 1. Điều kiện xét tuyển\n\nThí sinh xét tuyển ngành Trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương. Thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm.\n\nCác tổ hợp xét tuyển gồm A00, A01, D01 và D07. Điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký.",
+    "embedding": null,
+    "metadata": {
+      "parent_text": "## 1. Điều kiện xét tuyển\n\nThí sinh xét tuyển ngành Trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương. Thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm.\n\nCác tổ hợp xét tuyển gồm A00, A01, D01 và D07. Điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký.",
+      "section_title": "1. Điều kiện xét tuyển",
+      "parent_token_count": 78,
+      "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md"
+    }
+  },
+  {
+    "node_id": "quy_che_tuyen_sinh:c6:332110753b",
+    "chunk_id": "quy_che_tuyen_sinh:c6:332110753b",
+    "doc_id": "quy_che_tuyen_sinh",
+    "text_for_embedding": "2. Hồ sơ đăng ký\n\n2 hồ sơ đăng ký hồ sơ đăng ký gồm phiếu đăng ký xét tuyển bản sao học bạ hoặc kết quả thi giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có thí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường sau khi nộp thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc",
+    "text_for_generation": "## 2. Hồ sơ đăng ký\n\nHồ sơ đăng ký gồm phiếu đăng ký xét tuyển, bản sao học bạ hoặc kết quả thi, giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có.\n\nThí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường. Sau khi nộp, thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc.",
+    "embedding": null,
+    "metadata": {
+      "parent_text": "## 2. Hồ sơ đăng ký\n\nHồ sơ đăng ký gồm phiếu đăng ký xét tuyển, bản sao học bạ hoặc kết quả thi, giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có.\n\nThí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường. Sau khi nộp, thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc.",
+      "section_title": "2. Hồ sơ đăng ký",
+      "parent_token_count": 68,
+      "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md"
+    }
+  },
+  {
+    "node_id": "quy_che_tuyen_sinh:c7:dc9ebefa0b",
+    "chunk_id": "quy_che_tuyen_sinh:c7:dc9ebefa0b",
+    "doc_id": "quy_che_tuyen_sinh",
+    "text_for_embedding": "3. Học phí và học bổng\n\n3 học phí và học bổng học phí ngành trí tuệ nhân tạo được công bố theo từng năm học sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh học bổng duy trì được xét theo điểm trung bình học kỳ số tín chỉ hoàn thành và điểm rèn luyện",
+    "text_for_generation": "## 3. Học phí và học bổng\n\nHọc phí ngành Trí tuệ nhân tạo được công bố theo từng năm học. Sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh.\n\nHọc bổng duy trì được xét theo điểm trung bình học kỳ, số tín chỉ hoàn thành và điểm rèn luyện.",
+    "embedding": null,
+    "metadata": {
+      "parent_text": "## 3. Học phí và học bổng\n\nHọc phí ngành Trí tuệ nhân tạo được công bố theo từng năm học. Sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh.\n\nHọc bổng duy trì được xét theo điểm trung bình học kỳ, số tín chỉ hoàn thành và điểm rèn luyện.",
+      "section_title": "3. Học phí và học bổng",
+      "parent_token_count": 57,
+      "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md"
+    }
+  }
+]

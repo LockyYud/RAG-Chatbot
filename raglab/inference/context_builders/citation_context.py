@@ -36,7 +36,12 @@ class CitationContextBuilder(BaseContextBuilder):
             citation_map[citation_id] = cited_result
             parts.append(text)
             used_tokens += count
-        return BuiltContext(text="\n\n".join(parts), results=selected, citation_map=citation_map, token_count=used_tokens)
+        return BuiltContext(
+            text="\n\n".join(parts),
+            results=selected,
+            citation_map=citation_map,
+            token_count=used_tokens,
+        )
 
 
 def _source_label(result: RetrievalResult) -> str:

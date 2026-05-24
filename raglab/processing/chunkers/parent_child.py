@@ -33,4 +33,6 @@ class ParentChildChunker(BaseChunker):
             "parent_token_count": token_count(text),
         }
         for window in split_tokens(text, self.child_size, self.child_overlap):
-            chunks.append(make_chunk(section[0].doc_id, window, len(chunks), section, parent_id=parent_id, metadata=metadata))
+            chunks.append(
+                make_chunk(section[0].doc_id, window, len(chunks), section, parent_id=parent_id, metadata=metadata)
+            )

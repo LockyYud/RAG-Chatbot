@@ -1,73 +1,53 @@
 # RAG Pipeline Lab
 
-`rag-pipeline-lab` is a **paper-driven, evaluation-first RAG Lab** for turning RAG research ideas into runnable end-to-end pipelines.
+`rag-pipeline-lab` is a scalable, evaluation-first RAG research base for comparing retrieval, chunking,
+generation, verification, and evaluation strategies under one reproducible protocol.
 
-Repo này là một paper-driven, evaluation-first RAG Lab nhằm chuyển các ý tưởng và chiến lược RAG từ research papers thành những pipeline RAG hoàn chỉnh, có thể chạy end-to-end từ raw documents đến final answers. Thay vì chỉ implement lại code của từng paper một cách rời rạc, repo chuẩn hóa các strategy ở nhiều giai đoạn như data processing, chunking, enrichment, indexing, retrieval, reranking, context construction, generation và verification, sau đó benchmark chúng trên cùng một evaluation protocol. Mục tiêu là giúp AI Engineer/AI Researcher so sánh thực nghiệm các pipeline RAG theo chất lượng trả lời, citation accuracy, faithfulness, latency và cost, từ đó hiểu rõ strategy nào phù hợp với từng loại tài liệu và use case production.
+The repo is designed as a framework, not a notebook collection. A technique owns its metadata, config, optional custom
+code, and benchmark report. The engine keeps stable interfaces for processing, indexing, retrieval, context building,
+generation, verification, and evaluation so new research ideas can be added without rewriting the whole pipeline.
 
-## Repository Shape
+## What It Is
 
-```text
-raglab/              # Engine: stable interfaces and base components
-  core/
-  processing/
-  indexing/
-  inference/
-  cli/
+- A config-driven RAG pipeline engine with stable component registries.
+- A benchmark harness that writes per-run reports plus JSON, CSV, and Markdown summaries.
+- A local smoke path that runs without API keys.
+- An OpenAI-compatible research path for embeddings, generation, synthetic QA, and LLM-as-judge metrics.
+- An artifact format with manifest versioning, config hashes, embedding model metadata, and vector store metadata.
 
-techniques/          # Paper/method implementations
-  _template/
-  naive_rag/
-  rag_sequence_2020/
-  parent_child/
-
-evaluation/          # First-class evaluation protocol and runner
-  metrics/
-  protocol/
-  runner.py
-
-datasets/            # Sample data plus bring-your-own-data area
-  sample/
-  user_data/
-
-benchmarks/          # Benchmark runner and ignored local results
-  run_all.py
-  results/
-```
-
-## Technique Catalog
-
-Each technique owns its paper analysis, metadata, runnable config, and optional custom code:
+## Architecture
 
 ```text
-techniques/<technique_id>/
-  README.md
-  technique.yaml
-  config.yaml
-  custom/
-    register.py
+raw docs
+  -> parser / cleaner / chunker / enricher
+  -> embedder
+  -> vector store artifact
+  -> retriever / reranker
+  -> context builder
+  -> generator
+  -> verifier
+  -> evaluator / judge / benchmark report
 ```
 
-Current techniques:
+Main package layout:
 
-| Technique | Type | Base | Config |
-| --- | --- | --- | --- |
-| `naive_rag` | baseline | none | `techniques/naive_rag/config.yaml` |
-| `rag_sequence_2020` | paper-inspired RAG-Sequence from [arXiv:2005.11401](https://arxiv.org/abs/2005.11401) | `naive_rag` | `techniques/rag_sequence_2020/config.yaml` |
-| `parent_child` | production RAG pattern | `naive_rag` | `techniques/parent_child/config.yaml` |
-| `hyde_2022` | paper-inspired HyDE from [arXiv:2212.10496](https://arxiv.org/abs/2212.10496) | `rag_sequence_2020` | `techniques/hyde_2022/config.yaml` |
-| `rag_fusion_2024` | paper-inspired RAG-Fusion from [arXiv:2402.03367](https://arxiv.org/abs/2402.03367) | `rag_sequence_2020` | `techniques/rag_fusion_2024/config.yaml` |
-| `self_rag_2023` | concept-only Self-RAG-inspired critique verifier from [arXiv:2310.11511](https://arxiv.org/abs/2310.11511) | `parent_child` | `techniques/self_rag_2023/config.yaml` |
+```text
+raglab/
+  core/        # schema, interfaces, registry, config, pipeline orchestration
+  processing/  # parsers, cleaners, chunkers, enrichers
+  indexing/    # embeddings, retrievers, artifacts, vector stores
+  inference/   # context builders, generators, rerankers, verifiers
+  datasets/    # synthetic QA generation
+  cli/         # developer-facing CLI
 
-List techniques from CLI:
-
-```bash
-python -m raglab.cli.main techniques list
-python -m raglab.cli.main techniques show rag_sequence_2020
+evaluation/    # retrieval metrics, judge metrics, eval runner
+benchmarks/    # reproducible multi-technique benchmark runner
+techniques/    # baseline and paper-inspired technique configs
 ```
 
-## Quick Start
+## Quickstart
 
-Run the local baseline on the sample dataset:
+Local path, no API key:
 
 ```bash
 python -m raglab.cli.main ingest \
@@ -82,63 +62,145 @@ python -m raglab.cli.main eval \
   --output benchmarks/results/naive_rag_eval.json
 ```
 
-Run multiple techniques:
+Run a reproducible local benchmark:
 
 ```bash
-python benchmarks/run_all.py \
+python -m raglab.cli.main bench \
   --techniques naive_rag parent_child \
   --docs datasets/sample/docs \
   --qa datasets/sample/qa.jsonl \
-  --output benchmarks/results/sample
+  --output benchmarks/results/sample \
+  --mode full_rag
 ```
 
-## Real OpenAI-Compatible Path
+Inspect an artifact:
 
-Some paper-driven techniques require real embeddings or model generation. Create `.env` from `.env.example`:
+```bash
+python -m raglab.cli.main artifacts inspect --artifact artifacts/naive_rag
+```
+
+## OpenAI-Compatible Research Path
+
+Create `.env` from `.env.example`:
 
 ```bash
 OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_CHAT_MODEL=gpt-4.1-mini
+OPENAI_JUDGE_MODEL=gpt-4.1-mini
 ```
 
-Then run a paper-driven pipeline:
+Generate synthetic QA:
 
 ```bash
-python -m raglab.cli.main ingest \
-  --config techniques/rag_sequence_2020/config.yaml \
-  --input datasets/sample/docs \
-  --output artifacts/rag_sequence_2020
+python -m raglab.cli.main dataset generate \
+  --docs datasets/sample/docs \
+  --output datasets/generated/sample_qa.jsonl \
+  --limit 50 \
+  --model "$OPENAI_CHAT_MODEL"
+```
 
+Run full RAG evaluation with LLM-as-judge metrics:
+
+```bash
 python -m raglab.cli.main eval \
   --config techniques/rag_sequence_2020/config.yaml \
   --artifact artifacts/rag_sequence_2020 \
-  --dataset datasets/sample/qa.jsonl \
-  --output benchmarks/results/rag_sequence_2020_eval.json
+  --dataset datasets/generated/sample_qa.jsonl \
+  --output benchmarks/results/rag_sequence_2020_eval.json \
+  --mode full_rag \
+  --judge \
+  --judge-model "$OPENAI_JUDGE_MODEL"
 ```
 
-## Bring Your Own Dataset
+## Benchmark Results
 
-Use the format described in [datasets/README.md](datasets/README.md). For meaningful comparison, use at least 50-100 labeled QA pairs.
+Committed smoke benchmark on the tiny sample dataset:
+
+| Technique | Mode | Recall@5 | MRR | Citation Accuracy | Latency Avg | Cost Avg |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `naive_rag` | `full_rag` | 1.0 | 1.0 | 0.333333 | 0.469 ms | 0.0 |
+| `parent_child` | `full_rag` | 1.0 | 1.0 | 1.0 | 0.466 ms | 0.0 |
+
+The committed sample report is in `benchmarks/results/sample_research/`. It is intentionally small and exists to prove
+the benchmark contract. Use at least 50-100 QA pairs before making empirical claims.
+
+## Technique Catalog
+
+| Technique | Type | Base | Requires |
+| --- | --- | --- | --- |
+| `naive_rag` | local baseline | none | none |
+| `parent_child` | production retrieval pattern | `naive_rag` | none |
+| `rag_sequence_2020` | paper-inspired RAG-Sequence | `naive_rag` | OpenAI-compatible embeddings/chat |
+| `hyde_2022` | paper-inspired HyDE | `rag_sequence_2020` | OpenAI-compatible embeddings/chat |
+| `rag_fusion_2024` | paper-inspired RAG-Fusion | `rag_sequence_2020` | OpenAI-compatible embeddings/chat |
+| `self_rag_2023` | concept-only critique verifier | `parent_child` | OpenAI-compatible chat |
+
+List and inspect techniques:
 
 ```bash
-python benchmarks/run_all.py \
-  --techniques naive_rag parent_child rag_sequence_2020 hyde_2022 rag_fusion_2024 self_rag_2023 \
-  --docs datasets/user_data/my_docs \
-  --qa datasets/user_data/my_qa.jsonl \
-  --output benchmarks/results/my_dataset
+python -m raglab.cli.main techniques list
+python -m raglab.cli.main techniques show rag_sequence_2020
 ```
 
-## Add A New Paper Technique
+## Adding A Technique
 
 1. Copy `techniques/_template/`.
-2. Rename the folder with a stable descriptive id, e.g. `hyde_2022`.
-3. Fill `technique.yaml`, including `base`, `stage`, `requires`, `best_for`, and `weak_for`.
-4. Write the paper analysis in `README.md`.
-5. Compose the pipeline in `config.yaml`.
-6. Add custom strategy code under `custom/` only when base components are not enough.
-7. Register custom code through `custom/register.py`.
-8. Run against the same dataset as the baselines.
+2. Fill `technique.yaml` with metadata, implementation level, requirements, and weak cases.
+3. Compose the pipeline in `config.yaml`.
+4. Add custom code only when existing registry components are not enough.
+5. Register custom code through `custom/register.py`.
+6. Run the same benchmark dataset as the baselines.
 
-Be explicit about whether a technique is a **faithful reproduction**, **paper-inspired adaptation**, **production pattern**, or **baseline**.
+See `docs/adding_techniques.md` for the full extension contract.
+
+Config supports these scalable interfaces:
+
+```json
+{
+  "indexing": {
+    "embedding": {"type": "openai", "params": {"model": "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"}},
+    "store": {"type": "json_memory"}
+  },
+  "evaluation": {
+    "mode": "full_rag",
+    "judge": {"type": "openai", "params": {"model": "${OPENAI_JUDGE_MODEL:-gpt-4.1-mini}"}}
+  }
+}
+```
+
+Vector store backends:
+
+- `json_memory`: zero-dependency artifact backend for smoke tests and small experiments.
+- `faiss_local`: optional local vector backend for larger research runs. Install with `pip install ".[vector]"`.
+
+## Development
+
+Install development dependencies:
+
+```bash
+pip install -e ".[dev,research]"
+```
+
+Quality gates:
+
+```bash
+make lint
+make typecheck
+make test
+make bench-sample
+make ci
+```
+
+CI runs Ruff, mypy, and pytest on Python 3.11.
+
+Evaluation details are documented in `docs/evaluation_protocol.md`.
+
+## Roadmap
+
+- Add larger public benchmark datasets with 50-100+ labeled QA pairs.
+- Add FAISS-backed committed example config.
+- Add regression comparison across benchmark summaries.
+- Add richer failure analysis for multi-hop and unanswerable questions.
+- Add more retrieval and verification techniques on top of the stable base.

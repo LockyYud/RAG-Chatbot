@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-
 BlockType = Literal["title", "heading", "paragraph", "table", "figure", "list", "footnote"]
 
 
@@ -122,7 +121,7 @@ class EvalItem:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "EvalItem":
+    def from_dict(cls, data: dict[str, Any]) -> EvalItem:
         return cls(
             question_id=data["question_id"],
             question=data["question"],

@@ -22,7 +22,52 @@ def load_config(path: str | Path) -> dict[str, Any]:
         pass
     if config_path.suffix.lower() == ".json":
         return _resolve_env(json.loads(text))
+    try:
+        import yaml
+
+        loaded = yaml.safe_load(text)
+        if isinstance(loaded, dict):
+            return _resolve_env(loaded)
+    except ImportError:
+        pass
     return _resolve_env(_parse_minimal_yaml(text))
+
+
+def validate_config(config: dict[str, Any], *, for_ingest: bool = False, for_query: bool = False) -> None:
+    if not isinstance(config.get("processing", {}), dict):
+        raise ConfigError("processing must be a mapping")
+    if for_ingest:
+        _validate_stage(config, "processing.parser")
+        _validate_stage(config, "processing.chunker")
+        chunker = get_stage(config, "processing.chunker", {})
+        params = dict(chunker.get("params", {})) if isinstance(chunker, dict) else {}
+        for key in ("chunk_size", "overlap", "child_size", "child_overlap"):
+            if key in params and int(params[key]) < 0:
+                raise ConfigError(f"processing.chunker.params.{key} must be >= 0")
+    if for_query:
+        _validate_stage(config, "inference.retriever")
+        _validate_stage(config, "inference.context_builder")
+        _validate_stage(config, "inference.generator")
+        retriever = get_stage(config, "inference.retriever", {})
+        params = dict(retriever.get("params", {})) if isinstance(retriever, dict) else {}
+        if "top_k" in params and int(params["top_k"]) <= 0:
+            raise ConfigError("inference.retriever.params.top_k must be > 0")
+    embedding = get_stage(config, "indexing.embedding")
+    if isinstance(embedding, dict) and embedding.get("type") == "openai":
+        model = str(dict(embedding.get("params", {})).get("model", "")).strip()
+        if not model:
+            raise ConfigError("indexing.embedding.params.model is required for openai embeddings")
+    store = get_stage(config, "indexing.store")
+    if isinstance(store, dict) and store.get("type") not in {None, "json_memory", "faiss_local"}:
+        raise ConfigError("indexing.store.type must be json_memory or faiss_local")
+
+
+def _validate_stage(config: dict[str, Any], path: str) -> None:
+    stage = get_stage(config, path)
+    if stage is None:
+        raise ConfigError(f"Missing required config stage: {path}")
+    if isinstance(stage, dict) and not stage.get("type"):
+        raise ConfigError(f"{path}.type is required")
 
 
 def _parse_scalar(value: str) -> Any:

@@ -15,6 +15,10 @@ def evaluate_predictions(items: list[EvalItem], predictions: list[RAGAnswer], k:
     prompt_tokens: list[int] = []
     completion_tokens: list[int] = []
     estimated_costs: list[float] = []
+    answer_correctness: list[float] = []
+    faithfulness: list[float] = []
+    citation_support: list[float] = []
+    abstention_correctness: list[float] = []
 
     for item, prediction in zip(items, predictions, strict=True):
         contexts = prediction.contexts[:k]
@@ -48,8 +52,14 @@ def evaluate_predictions(items: list[EvalItem], predictions: list[RAGAnswer], k:
         cost = prediction.metadata.get("cost_estimate", {})
         if isinstance(cost, dict):
             estimated_costs.append(float(cost.get("amount", 0.0)))
+        judge = prediction.metadata.get("judge")
+        if isinstance(judge, dict):
+            answer_correctness.append(float(judge.get("answer_correctness", 0.0)))
+            faithfulness.append(float(judge.get("faithfulness", 0.0)))
+            citation_support.append(float(judge.get("citation_support", 0.0)))
+            abstention_correctness.append(float(judge.get("abstention_correctness", 0.0)))
 
-    return {
+    metrics = {
         f"recall_at_{k}": _mean(recall_values),
         "hit_rate": _mean(hit_values),
         "mrr": _mean(reciprocal_ranks),
@@ -61,6 +71,16 @@ def evaluate_predictions(items: list[EvalItem], predictions: list[RAGAnswer], k:
         "estimated_cost_avg": _mean(estimated_costs),
         "queries": len(items),
     }
+    if answer_correctness:
+        metrics.update(
+            {
+                "answer_correctness": _mean(answer_correctness),
+                "faithfulness": _mean(faithfulness),
+                "citation_support": _mean(citation_support),
+                "abstention_correctness": _mean(abstention_correctness),
+            }
+        )
+    return metrics
 
 
 def _rr(values: list[str], expected: set[str]) -> float:

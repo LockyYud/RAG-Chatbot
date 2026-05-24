@@ -5,7 +5,6 @@ import re
 import unicodedata
 from collections import Counter
 
-
 WORD_RE = re.compile(r"[\wÀ-ỹ]+", re.UNICODE)
 
 

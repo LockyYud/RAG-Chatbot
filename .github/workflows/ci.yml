@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install -e ".[dev,research]"
+      - name: Lint
+        run: python -m ruff check .
+      - name: Typecheck
+        run: python -m mypy raglab evaluation benchmarks tests
+      - name: Test
+        run: python -m pytest --cov=raglab --cov=evaluation --cov-report=term-missing

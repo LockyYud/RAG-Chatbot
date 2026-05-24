@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
 import importlib.util
 import sys
+from pathlib import Path
+from typing import Any
 
 from raglab.core.config import load_config
 

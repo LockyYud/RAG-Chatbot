@@ -17,7 +17,12 @@ class ExtractiveGenerator(BaseGenerator):
 class CitationExtractiveGenerator(BaseGenerator):
     def generate(self, query: str, context: BuiltContext) -> RAGAnswer:
         if not context.results:
-            return RAGAnswer(query=query, answer="Không tìm thấy đủ bằng chứng trong tài liệu.", contexts=[], citations=[])
+            return RAGAnswer(
+                query=query,
+                answer="Không tìm thấy đủ bằng chứng trong tài liệu.",
+                contexts=[],
+                citations=[],
+            )
         best = context.results[0]
         citation_id = best.metadata.get("citation_id", "C1")
         citation = best.metadata.get("citation", best.chunk_id)

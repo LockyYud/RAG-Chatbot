@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from raglab.core.interfaces import BaseParser
-from raglab.core.schema import DocumentBlock
+from raglab.core.schema import BlockType, DocumentBlock
 
 
 class TextParser(BaseParser):
@@ -14,7 +15,7 @@ class TextParser(BaseParser):
         blocks: list[DocumentBlock] = []
         paragraphs = [part.strip() for part in text.split("\n\n") if part.strip()]
         for index, paragraph in enumerate(paragraphs):
-            block_type = "heading" if _looks_like_heading(paragraph) else "paragraph"
+            block_type = cast(BlockType, "heading" if _looks_like_heading(paragraph) else "paragraph")
             blocks.append(
                 DocumentBlock(
                     block_id=f"{doc_id}:b{index + 1}",

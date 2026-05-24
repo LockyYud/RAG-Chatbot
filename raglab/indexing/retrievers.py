@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 
-from raglab.core.interfaces import BaseRetriever
+from raglab.core.interfaces import BaseRetriever, BaseVectorStore
 from raglab.core.schema import IndexedNode, RetrievalResult
 from raglab.core.text import cosine, dense_cosine, term_vector, tokenize
 from raglab.indexing.embeddings import OpenAIEmbedder
@@ -74,6 +74,7 @@ class OpenAIDenseRetriever(BaseRetriever):
     def __init__(
         self,
         nodes: list[IndexedNode],
+        vector_store: BaseVectorStore | None = None,
         embedding_model: str = "text-embedding-3-small",
         **_: object,
     ) -> None:
@@ -84,11 +85,15 @@ class OpenAIDenseRetriever(BaseRetriever):
                 "Use indexing.embedding.type=openai in the pipeline config."
             )
         self.nodes = nodes
+        self.vector_store = vector_store
         self.embedder = OpenAIEmbedder(model=embedding_model)
 
     def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
         query_vector = self.embedder.embed_texts([query])[0]
-        scored = [(node, dense_cosine(query_vector, node.embedding or [])) for node in self.nodes]
+        if self.vector_store is not None:
+            scored = self.vector_store.search(query_vector, top_k)
+        else:
+            scored = [(node, dense_cosine(query_vector, node.embedding or [])) for node in self.nodes]
         return _to_results(scored, top_k)
 
 
@@ -96,13 +101,14 @@ class OpenAIHybridRetriever(BaseRetriever):
     def __init__(
         self,
         nodes: list[IndexedNode],
+        vector_store: BaseVectorStore | None = None,
         alpha: float = 0.5,
         embedding_model: str = "text-embedding-3-small",
         **_: object,
     ) -> None:
         self.nodes = nodes
         self.alpha = alpha
-        self.dense = OpenAIDenseRetriever(nodes, embedding_model=embedding_model)
+        self.dense = OpenAIDenseRetriever(nodes, vector_store=vector_store, embedding_model=embedding_model)
         self.bm25 = BM25Retriever(nodes)
 
     def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:

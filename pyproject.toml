@@ -7,7 +7,22 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = [
+  "mypy>=1.10",
+  "pytest>=8",
+  "pytest-cov>=5",
+  "ruff>=0.5",
+]
+research = [
+  "numpy>=1.26",
+  "openai>=1.40",
+  "pydantic>=2.7",
+  "pyyaml>=6",
+]
+vector = [
+  "faiss-cpu>=1.8",
+  "numpy>=1.26",
+]
 
 [project.scripts]
 raglab = "raglab.cli.main:main"
@@ -16,6 +31,28 @@ raglab = "raglab.cli.main:main"
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["raglab*", "evaluation*"]
+exclude = ["datasets*", "techniques*", "benchmarks*", "tests*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"benchmarks/run_all.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false
+warn_unused_ignores = true
+exclude = ["artifacts", "benchmarks/results"]

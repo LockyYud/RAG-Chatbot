@@ -16,6 +16,9 @@
         "model": "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}",
         "batch_size": 64
       }
+    },
+    "store": {
+      "type": "json_memory"
     }
   },
   "inference": {

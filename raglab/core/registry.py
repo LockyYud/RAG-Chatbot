@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable
-
+from collections.abc import Callable
+from typing import Any
 
 Factory = Callable[..., Any]
 
@@ -41,13 +41,19 @@ verifiers = Registry()
 
 
 def register_defaults() -> None:
-    from raglab.indexing.retrievers import BM25Retriever, DenseRetriever, HybridRetriever, OpenAIDenseRetriever, OpenAIHybridRetriever
+    from raglab.indexing.retrievers import (
+        BM25Retriever,
+        DenseRetriever,
+        HybridRetriever,
+        OpenAIDenseRetriever,
+        OpenAIHybridRetriever,
+    )
     from raglab.inference.context_builders.citation_context import CitationContextBuilder
     from raglab.inference.context_builders.topk_context import TopKContextBuilder
     from raglab.inference.generators.extractive import CitationExtractiveGenerator, ExtractiveGenerator
     from raglab.inference.generators.openai_chat import OpenAIChatGenerator
-    from raglab.inference.rerankers.no_reranker import NoReranker
     from raglab.inference.rerankers.lexical_overlap import LexicalOverlapReranker
+    from raglab.inference.rerankers.no_reranker import NoReranker
     from raglab.inference.verifiers.citation_coverage import CitationCoverageVerifier
     from raglab.processing.chunkers.fixed_size import FixedSizeChunker
     from raglab.processing.chunkers.heading_aware import HeadingAwareChunker
