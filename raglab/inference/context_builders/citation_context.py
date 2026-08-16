@@ -45,7 +45,4 @@ class CitationContextBuilder(BaseContextBuilder):
 
 
 def _source_label(result: RetrievalResult) -> str:
-    section = result.metadata.get("section_title")
-    if section:
-        return f"{result.doc_id}:{section}"
-    return result.chunk_id
+    return result.doc_id

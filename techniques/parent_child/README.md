@@ -36,12 +36,10 @@ Can add unnecessary context for very short FAQ-like documents. It may also hurt 
 
 ```bash
 python -m raglab.cli.main ingest \
-  --config techniques/parent_child/config.yaml \
   --input datasets/sample/docs \
   --output artifacts/parent_child
 
 python -m raglab.cli.main eval \
-  --config techniques/parent_child/config.yaml \
   --artifact artifacts/parent_child \
   --dataset datasets/sample/qa.jsonl \
   --output benchmarks/results/parent_child_eval.json

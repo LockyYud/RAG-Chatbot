@@ -7,16 +7,33 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - name: Install
-        run: python -m pip install -e ".[dev,research]"
+        run: python -m pip install -e ".[dev,research,vector,rerank]"
       - name: Lint
         run: python -m ruff check .
       - name: Typecheck
-        run: python -m mypy raglab evaluation benchmarks tests
+        run: python -m mypy raglab evaluation benchmarks tests techniques
       - name: Test
-        run: python -m pytest --cov=raglab --cov=evaluation --cov-report=term-missing
+        run: python -m pytest --cov=raglab --cov=evaluation --cov-report=term-missing --cov-fail-under=60
+      - name: Validate committed research fixture
+        run: python -m raglab.cli.main dataset validate datasets/processed/vi_wiki_retrieval
+      - name: Offline benchmark smoke
+        run: python benchmarks/run_all.py --techniques parent_child --docs datasets/sample/docs --qa datasets/sample/qa.jsonl --output /tmp/raglab-bench --mode full_rag
+      - name: Build wheel
+        run: python -m build --wheel
+      - name: Installed wheel smoke outside checkout
+        run: |
+          python -m pip install --force-reinstall dist/*.whl
+          cd /tmp
+          raglab techniques list
+          raglab ingest --technique parent_child --input "$GITHUB_WORKSPACE/datasets/sample/docs" --output /tmp/raglab-artifact
+          raglab query --technique parent_child --artifact /tmp/raglab-artifact --query "Điều kiện xét tuyển là gì?"
+          raglab eval --technique parent_child --artifact /tmp/raglab-artifact --dataset "$GITHUB_WORKSPACE/datasets/sample/qa.jsonl" --output /tmp/raglab-eval.json

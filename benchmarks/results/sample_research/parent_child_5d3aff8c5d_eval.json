@@ -1,0 +1,470 @@
+{
+  "report_schema_version": "2",
+  "run_metadata": {
+    "pipeline_id": "parent_child",
+    "pipeline_name": "Parent-Child Chunking (small-to-big retrieval)",
+    "artifact_path": "benchmarks/results/sample_research/artifacts/parent_child",
+    "artifact_fingerprint": "sha256:5d3aff8c5da5a82a13423e4a152bbcc4d60e37c6f2713445907750fa4dfda721",
+    "pipeline_config_fingerprint": "sha256:a047afe659162285ec42c1d7ae46555392d81877fccc4a17407e6be9bf62d913",
+    "dataset_path": "datasets/sample/qa.jsonl",
+    "dataset_input_path": "datasets/sample/qa.jsonl",
+    "dataset_fingerprint": "sha256:46d8e38a68fc882d0dd4f07529cd1211a77dbe7cdf0614e5b25513398a00c51a",
+    "seed": null,
+    "mode": "full_rag",
+    "evaluation_profile": "citation_rag",
+    "top_k": 5,
+    "evaluation_query_overrides": {
+      "rerank_top_k": 5
+    },
+    "judge_enabled": false,
+    "raglab_version": "0.2.0",
+    "python_version": "3.12.3",
+    "dependencies": {
+      "litellm": "1.86.0",
+      "numpy": "2.4.6",
+      "faiss-cpu": null,
+      "sentence-transformers": "5.7.0"
+    },
+    "git": {
+      "commit": "6e0063d35f6db6e996819adf93ccc11d94153e33",
+      "dirty": true
+    }
+  },
+  "metrics": {
+    "recall_at_5": 1.0,
+    "hit_rate": 1.0,
+    "mrr": 1.0,
+    "evidence_complete_rate": 1.0,
+    "partial_evidence_rate": 0.0,
+    "zero_evidence_rate": 0.0,
+    "retrieval_queries_evaluated": 3,
+    "answerable_queries": 3,
+    "unanswerable_queries": 0,
+    "abstention_accuracy": 1.0,
+    "latency_ms_avg": 0.74,
+    "context_tokens_avg": 304.666667,
+    "prompt_tokens_avg": 0.0,
+    "completion_tokens_avg": 0.0,
+    "estimated_cost_avg": 0.0,
+    "queries": 3,
+    "citation_precision": 1.0,
+    "citation_recall": 1.0,
+    "citation_f1": 1.0,
+    "citation_queries_evaluated": 3
+  },
+  "effective_components": [
+    {
+      "retriever": "bm25",
+      "generator": "citation_extractive",
+      "verifier": "citation_coverage"
+    }
+  ],
+  "cost_summary": {
+    "currency": "USD",
+    "total_estimated_cost": 0.0,
+    "avg_estimated_cost": 0.0
+  },
+  "failures": [],
+  "predictions": [
+    {
+      "question_id": "q1",
+      "question": "Điều kiện xét tuyển ngành trí tuệ nhân tạo là gì?",
+      "answer": "Thí sinh xét tuyển ngành Trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương. [C1]",
+      "abstained": false,
+      "citations": [
+        "quy_che_tuyen_sinh"
+      ],
+      "contexts": [
+        {
+          "node_id": "quy_che_tuyen_sinh:c5:27f418026d",
+          "chunk_id": "quy_che_tuyen_sinh:c5:27f418026d",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "## 1. Điều kiện xét tuyển\n\nThí sinh xét tuyển ngành Trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương. Thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm.\n\nCác tổ hợp xét tuyển gồm A00, A01, D01 và D07. Điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký.",
+          "score": 7.173991478955094,
+          "rank": 1,
+          "metadata": {
+            "parent_text": "## 1. Điều kiện xét tuyển\n\nThí sinh xét tuyển ngành Trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương. Thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm.\n\nCác tổ hợp xét tuyển gồm A00, A01, D01 và D07. Điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký.",
+            "section_title": "1. Điều kiện xét tuyển",
+            "parent_token_count": 78,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C1",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        },
+        {
+          "node_id": "quy_che_tuyen_sinh:c4:54e77f8a0c",
+          "chunk_id": "quy_che_tuyen_sinh:c4:54e77f8a0c",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "# Quy chế tuyển sinh ngành Trí tuệ nhân tạo",
+          "score": 5.696856973803424,
+          "rank": 2,
+          "metadata": {
+            "parent_text": "# Quy chế tuyển sinh ngành Trí tuệ nhân tạo",
+            "section_title": "Quy chế tuyển sinh ngành Trí tuệ nhân tạo",
+            "parent_token_count": 9,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C2",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        },
+        {
+          "node_id": "quy_che_tuyen_sinh:c7:dc9ebefa0b",
+          "chunk_id": "quy_che_tuyen_sinh:c7:dc9ebefa0b",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "## 3. Học phí và học bổng\n\nHọc phí ngành Trí tuệ nhân tạo được công bố theo từng năm học. Sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh.\n\nHọc bổng duy trì được xét theo điểm trung bình học kỳ, số tín chỉ hoàn thành và điểm rèn luyện.",
+          "score": 3.816837858448655,
+          "rank": 3,
+          "metadata": {
+            "parent_text": "## 3. Học phí và học bổng\n\nHọc phí ngành Trí tuệ nhân tạo được công bố theo từng năm học. Sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh.\n\nHọc bổng duy trì được xét theo điểm trung bình học kỳ, số tín chỉ hoàn thành và điểm rèn luyện.",
+            "section_title": "3. Học phí và học bổng",
+            "parent_token_count": 57,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C3",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        },
+        {
+          "node_id": "quy_che_tuyen_sinh:c6:332110753b",
+          "chunk_id": "quy_che_tuyen_sinh:c6:332110753b",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "## 2. Hồ sơ đăng ký\n\nHồ sơ đăng ký gồm phiếu đăng ký xét tuyển, bản sao học bạ hoặc kết quả thi, giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có.\n\nThí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường. Sau khi nộp, thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc.",
+          "score": 1.1238952840447203,
+          "rank": 4,
+          "metadata": {
+            "parent_text": "## 2. Hồ sơ đăng ký\n\nHồ sơ đăng ký gồm phiếu đăng ký xét tuyển, bản sao học bạ hoặc kết quả thi, giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có.\n\nThí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường. Sau khi nộp, thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc.",
+            "section_title": "2. Hồ sơ đăng ký",
+            "parent_token_count": 68,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C4",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        },
+        {
+          "node_id": "chinh_sach_nhan_su:c1:a0b4970e4b",
+          "chunk_id": "chinh_sach_nhan_su:c1:a0b4970e4b",
+          "doc_id": "chinh_sach_nhan_su",
+          "text": "# Sổ tay nhân sự công ty mẫu",
+          "score": 0.31403123494144286,
+          "rank": 5,
+          "metadata": {
+            "parent_text": "# Sổ tay nhân sự công ty mẫu",
+            "section_title": "Sổ tay nhân sự công ty mẫu",
+            "parent_token_count": 7,
+            "source_path": "datasets/sample/docs/chinh_sach_nhan_su.md",
+            "citation_id": "C5",
+            "citation": "chinh_sach_nhan_su"
+          }
+        }
+      ],
+      "metadata": {
+        "mode": "citation_extractive",
+        "citation_ids": [
+          "C1"
+        ],
+        "latency_ms": 0.918,
+        "retrieved_count": 6,
+        "context_token_count": 261,
+        "retrieval_runtime": {},
+        "retrieval_cost_estimate": {
+          "currency": "USD",
+          "amount": 0.0,
+          "basis": "local retriever (no paid calls)"
+        },
+        "verification_runtime": {},
+        "cost_estimate": {
+          "currency": "USD",
+          "amount": 0.0,
+          "basis": "local fallback; no paid model calls"
+        },
+        "verification": {
+          "grounded": true,
+          "citation_coverage": 1.0,
+          "evidence_count": 5,
+          "status": "run",
+          "unsupported_citations": [],
+          "notes": []
+        },
+        "components": {
+          "retriever": "bm25",
+          "generator": "citation_extractive",
+          "verifier": "citation_coverage"
+        },
+        "artifact_manifest": {
+          "artifact_version": "3",
+          "pipeline_id": "parent_child",
+          "config_fingerprint": "sha256:a047afe659162285ec42c1d7ae46555392d81877fccc4a17407e6be9bf62d913",
+          "corpus_fingerprint": "sha256:5d3aff8c5da5a82a13423e4a152bbcc4d60e37c6f2713445907750fa4dfda721",
+          "store_backend": "json_memory",
+          "embedding_model": null
+        }
+      }
+    },
+    {
+      "question_id": "q2",
+      "question": "Hồ sơ đăng ký xét tuyển gồm những giấy tờ nào?",
+      "answer": "Hồ sơ đăng ký gồm phiếu đăng ký xét tuyển, bản sao học bạ hoặc kết quả thi, giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có. [C1]",
+      "abstained": false,
+      "citations": [
+        "quy_che_tuyen_sinh"
+      ],
+      "contexts": [
+        {
+          "node_id": "quy_che_tuyen_sinh:c6:332110753b",
+          "chunk_id": "quy_che_tuyen_sinh:c6:332110753b",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "## 2. Hồ sơ đăng ký\n\nHồ sơ đăng ký gồm phiếu đăng ký xét tuyển, bản sao học bạ hoặc kết quả thi, giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có.\n\nThí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường. Sau khi nộp, thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc.",
+          "score": 11.02398145593682,
+          "rank": 1,
+          "metadata": {
+            "parent_text": "## 2. Hồ sơ đăng ký\n\nHồ sơ đăng ký gồm phiếu đăng ký xét tuyển, bản sao học bạ hoặc kết quả thi, giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có.\n\nThí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường. Sau khi nộp, thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc.",
+            "section_title": "2. Hồ sơ đăng ký",
+            "parent_token_count": 68,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C1",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        },
+        {
+          "node_id": "quy_che_tuyen_sinh:c5:27f418026d",
+          "chunk_id": "quy_che_tuyen_sinh:c5:27f418026d",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "## 1. Điều kiện xét tuyển\n\nThí sinh xét tuyển ngành Trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương. Thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm.\n\nCác tổ hợp xét tuyển gồm A00, A01, D01 và D07. Điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký.",
+          "score": 3.6351532179491994,
+          "rank": 2,
+          "metadata": {
+            "parent_text": "## 1. Điều kiện xét tuyển\n\nThí sinh xét tuyển ngành Trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương. Thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm.\n\nCác tổ hợp xét tuyển gồm A00, A01, D01 và D07. Điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký.",
+            "section_title": "1. Điều kiện xét tuyển",
+            "parent_token_count": 78,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C2",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        },
+        {
+          "node_id": "quy_che_tuyen_sinh:c7:dc9ebefa0b",
+          "chunk_id": "quy_che_tuyen_sinh:c7:dc9ebefa0b",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "## 3. Học phí và học bổng\n\nHọc phí ngành Trí tuệ nhân tạo được công bố theo từng năm học. Sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh.\n\nHọc bổng duy trì được xét theo điểm trung bình học kỳ, số tín chỉ hoàn thành và điểm rèn luyện.",
+          "score": 1.27694663734066,
+          "rank": 3,
+          "metadata": {
+            "parent_text": "## 3. Học phí và học bổng\n\nHọc phí ngành Trí tuệ nhân tạo được công bố theo từng năm học. Sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh.\n\nHọc bổng duy trì được xét theo điểm trung bình học kỳ, số tín chỉ hoàn thành và điểm rèn luyện.",
+            "section_title": "3. Học phí và học bổng",
+            "parent_token_count": 57,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C3",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        },
+        {
+          "node_id": "chinh_sach_nhan_su:c3:f8b07b2829",
+          "chunk_id": "chinh_sach_nhan_su:c3:f8b07b2829",
+          "doc_id": "chinh_sach_nhan_su",
+          "text": "## 2. Làm việc từ xa\n\nNhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng.\n\nQuản lý trực tiếp phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc.",
+          "score": 1.2334571558050884,
+          "rank": 4,
+          "metadata": {
+            "parent_text": "## 2. Làm việc từ xa\n\nNhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng.\n\nQuản lý trực tiếp phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc.",
+            "section_title": "2. Làm việc từ xa",
+            "parent_token_count": 53,
+            "source_path": "datasets/sample/docs/chinh_sach_nhan_su.md",
+            "citation_id": "C4",
+            "citation": "chinh_sach_nhan_su"
+          }
+        },
+        {
+          "node_id": "quy_che_tuyen_sinh:c4:54e77f8a0c",
+          "chunk_id": "quy_che_tuyen_sinh:c4:54e77f8a0c",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "# Quy chế tuyển sinh ngành Trí tuệ nhân tạo",
+          "score": 0.8050082634707239,
+          "rank": 5,
+          "metadata": {
+            "parent_text": "# Quy chế tuyển sinh ngành Trí tuệ nhân tạo",
+            "section_title": "Quy chế tuyển sinh ngành Trí tuệ nhân tạo",
+            "parent_token_count": 9,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C5",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        }
+      ],
+      "metadata": {
+        "mode": "citation_extractive",
+        "citation_ids": [
+          "C1"
+        ],
+        "latency_ms": 0.623,
+        "retrieved_count": 6,
+        "context_token_count": 305,
+        "retrieval_runtime": {},
+        "retrieval_cost_estimate": {
+          "currency": "USD",
+          "amount": 0.0,
+          "basis": "local retriever (no paid calls)"
+        },
+        "verification_runtime": {},
+        "cost_estimate": {
+          "currency": "USD",
+          "amount": 0.0,
+          "basis": "local fallback; no paid model calls"
+        },
+        "verification": {
+          "grounded": true,
+          "citation_coverage": 1.0,
+          "evidence_count": 5,
+          "status": "run",
+          "unsupported_citations": [],
+          "notes": []
+        },
+        "components": {
+          "retriever": "bm25",
+          "generator": "citation_extractive",
+          "verifier": "citation_coverage"
+        },
+        "artifact_manifest": {
+          "artifact_version": "3",
+          "pipeline_id": "parent_child",
+          "config_fingerprint": "sha256:a047afe659162285ec42c1d7ae46555392d81877fccc4a17407e6be9bf62d913",
+          "corpus_fingerprint": "sha256:5d3aff8c5da5a82a13423e4a152bbcc4d60e37c6f2713445907750fa4dfda721",
+          "store_backend": "json_memory",
+          "embedding_model": null
+        }
+      }
+    },
+    {
+      "question_id": "q3",
+      "question": "Nhân viên được làm việc từ xa tối đa bao nhiêu ngày mỗi tuần?",
+      "answer": "Nhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng. [C1]",
+      "abstained": false,
+      "citations": [
+        "chinh_sach_nhan_su"
+      ],
+      "contexts": [
+        {
+          "node_id": "chinh_sach_nhan_su:c3:f8b07b2829",
+          "chunk_id": "chinh_sach_nhan_su:c3:f8b07b2829",
+          "doc_id": "chinh_sach_nhan_su",
+          "text": "## 2. Làm việc từ xa\n\nNhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng.\n\nQuản lý trực tiếp phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc.",
+          "score": 12.465690574821945,
+          "rank": 1,
+          "metadata": {
+            "parent_text": "## 2. Làm việc từ xa\n\nNhân viên có thể đăng ký làm việc từ xa tối đa hai ngày mỗi tuần nếu công việc không yêu cầu hiện diện tại văn phòng.\n\nQuản lý trực tiếp phê duyệt lịch làm việc từ xa dựa trên kế hoạch nhóm và tiến độ công việc.",
+            "section_title": "2. Làm việc từ xa",
+            "parent_token_count": 53,
+            "source_path": "datasets/sample/docs/chinh_sach_nhan_su.md",
+            "citation_id": "C1",
+            "citation": "chinh_sach_nhan_su"
+          }
+        },
+        {
+          "node_id": "chinh_sach_nhan_su:c2:c70bc027bd",
+          "chunk_id": "chinh_sach_nhan_su:c2:c70bc027bd",
+          "doc_id": "chinh_sach_nhan_su",
+          "text": "## 1. Nghỉ phép năm\n\nNhân viên chính thức có mười hai ngày nghỉ phép năm. Số ngày nghỉ phép tăng thêm theo thâm niên làm việc theo chính sách của công ty.\n\nNhân viên cần gửi yêu cầu nghỉ phép trên hệ thống nội bộ trước ít nhất ba ngày làm việc, trừ trường hợp khẩn cấp.",
+          "score": 3.828098732989754,
+          "rank": 2,
+          "metadata": {
+            "parent_text": "## 1. Nghỉ phép năm\n\nNhân viên chính thức có mười hai ngày nghỉ phép năm. Số ngày nghỉ phép tăng thêm theo thâm niên làm việc theo chính sách của công ty.\n\nNhân viên cần gửi yêu cầu nghỉ phép trên hệ thống nội bộ trước ít nhất ba ngày làm việc, trừ trường hợp khẩn cấp.",
+            "section_title": "1. Nghỉ phép năm",
+            "parent_token_count": 57,
+            "source_path": "datasets/sample/docs/chinh_sach_nhan_su.md",
+            "citation_id": "C2",
+            "citation": "chinh_sach_nhan_su"
+          }
+        },
+        {
+          "node_id": "quy_che_tuyen_sinh:c7:dc9ebefa0b",
+          "chunk_id": "quy_che_tuyen_sinh:c7:dc9ebefa0b",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "## 3. Học phí và học bổng\n\nHọc phí ngành Trí tuệ nhân tạo được công bố theo từng năm học. Sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh.\n\nHọc bổng duy trì được xét theo điểm trung bình học kỳ, số tín chỉ hoàn thành và điểm rèn luyện.",
+          "score": 2.1550300609631705,
+          "rank": 3,
+          "metadata": {
+            "parent_text": "## 3. Học phí và học bổng\n\nHọc phí ngành Trí tuệ nhân tạo được công bố theo từng năm học. Sinh viên có kết quả đầu vào cao có thể được xét học bổng tuyển sinh.\n\nHọc bổng duy trì được xét theo điểm trung bình học kỳ, số tín chỉ hoàn thành và điểm rèn luyện.",
+            "section_title": "3. Học phí và học bổng",
+            "parent_token_count": 57,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C3",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        },
+        {
+          "node_id": "quy_che_tuyen_sinh:c6:332110753b",
+          "chunk_id": "quy_che_tuyen_sinh:c6:332110753b",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "## 2. Hồ sơ đăng ký\n\nHồ sơ đăng ký gồm phiếu đăng ký xét tuyển, bản sao học bạ hoặc kết quả thi, giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có.\n\nThí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường. Sau khi nộp, thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc.",
+          "score": 1.6413206780259668,
+          "rank": 4,
+          "metadata": {
+            "parent_text": "## 2. Hồ sơ đăng ký\n\nHồ sơ đăng ký gồm phiếu đăng ký xét tuyển, bản sao học bạ hoặc kết quả thi, giấy chứng nhận tốt nghiệp tạm thời và giấy tờ ưu tiên nếu có.\n\nThí sinh nộp hồ sơ trực tuyến trên cổng tuyển sinh của trường. Sau khi nộp, thí sinh cần kiểm tra trạng thái xác nhận trong vòng ba ngày làm việc.",
+            "section_title": "2. Hồ sơ đăng ký",
+            "parent_token_count": 68,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C4",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        },
+        {
+          "node_id": "quy_che_tuyen_sinh:c5:27f418026d",
+          "chunk_id": "quy_che_tuyen_sinh:c5:27f418026d",
+          "doc_id": "quy_che_tuyen_sinh",
+          "text": "## 1. Điều kiện xét tuyển\n\nThí sinh xét tuyển ngành Trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương. Thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm.\n\nCác tổ hợp xét tuyển gồm A00, A01, D01 và D07. Điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký.",
+          "score": 1.5659246346540523,
+          "rank": 5,
+          "metadata": {
+            "parent_text": "## 1. Điều kiện xét tuyển\n\nThí sinh xét tuyển ngành Trí tuệ nhân tạo cần tốt nghiệp trung học phổ thông hoặc có bằng tương đương. Thí sinh phải đáp ứng ngưỡng đảm bảo chất lượng đầu vào do trường công bố từng năm.\n\nCác tổ hợp xét tuyển gồm A00, A01, D01 và D07. Điểm xét tuyển được tính từ điểm thi tốt nghiệp trung học phổ thông hoặc học bạ tùy theo phương thức đăng ký.",
+            "section_title": "1. Điều kiện xét tuyển",
+            "parent_token_count": 78,
+            "source_path": "datasets/sample/docs/quy_che_tuyen_sinh.md",
+            "citation_id": "C5",
+            "citation": "quy_che_tuyen_sinh"
+          }
+        }
+      ],
+      "metadata": {
+        "mode": "citation_extractive",
+        "citation_ids": [
+          "C1"
+        ],
+        "latency_ms": 0.679,
+        "retrieved_count": 6,
+        "context_token_count": 348,
+        "retrieval_runtime": {},
+        "retrieval_cost_estimate": {
+          "currency": "USD",
+          "amount": 0.0,
+          "basis": "local retriever (no paid calls)"
+        },
+        "verification_runtime": {},
+        "cost_estimate": {
+          "currency": "USD",
+          "amount": 0.0,
+          "basis": "local fallback; no paid model calls"
+        },
+        "verification": {
+          "grounded": true,
+          "citation_coverage": 1.0,
+          "evidence_count": 5,
+          "status": "run",
+          "unsupported_citations": [],
+          "notes": []
+        },
+        "components": {
+          "retriever": "bm25",
+          "generator": "citation_extractive",
+          "verifier": "citation_coverage"
+        },
+        "artifact_manifest": {
+          "artifact_version": "3",
+          "pipeline_id": "parent_child",
+          "config_fingerprint": "sha256:a047afe659162285ec42c1d7ae46555392d81877fccc4a17407e6be9bf62d913",
+          "corpus_fingerprint": "sha256:5d3aff8c5da5a82a13423e4a152bbcc4d60e37c6f2713445907750fa4dfda721",
+          "store_backend": "json_memory",
+          "embedding_model": null
+        }
+      }
+    }
+  ],
+  "result_fingerprint": "sha256:d20e162f1ad30ab415f5e6a548837ad47a8c0507f176474580fa5966f4afbb56"
+}

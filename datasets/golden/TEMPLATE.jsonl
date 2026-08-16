@@ -1,0 +1,1 @@
+{"question_id":"gold-001","question":"...","reference_answer":"...","is_answerable":true,"required_claims":["Atomic fact that a correct answer must state."],"evidence_spans":[{"doc_id":"document-id","text":"Exact supporting span copied from the source."}],"question_type":"single_hop","difficulty":"medium","review":{"annotator":"","reviewed_at":""}}

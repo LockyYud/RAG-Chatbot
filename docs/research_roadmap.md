@@ -23,8 +23,11 @@ Các hướng đã có trong repo:
 
 | Nhóm | Technique hiện có | Trạng thái |
 | --- | --- | --- |
-| Baseline RAG đơn giản | `naive_rag` | local baseline chạy được |
+| Baseline RAG đơn giản | `naive_rag` | dense baseline; requires an embedding provider |
 | Parent-child retrieval | `parent_child` | production pattern chạy được |
+| Hybrid BM25 + dense + rerank | `bm25_hybrid_rerank` | production baseline; benchmark bắt buộc cross-encoder thật |
+| Contextual Retrieval (Anthropic 2024) | `contextual_retrieval_2024` | paper-inspired chạy được (contextual enricher trên nền hybrid + rerank) |
+| Agentic RAG (A-RAG 2026) | `agentic_rag_arag` | paper-inspired chạy được (controller đa bước, training-free, tool=BM25/dense/RRF/chunk_read) |
 | RAG-Sequence | `rag_sequence_2020` | paper-inspired |
 | HyDE | `hyde_2022` | paper-inspired |
 | RAG-Fusion | `rag_fusion_2024` | paper-inspired |
@@ -32,12 +35,10 @@ Các hướng đã có trong repo:
 
 Các khoảng trống chính:
 
-- Chưa có production baseline mạnh kiểu lexical + dense + reranker.
 - Chưa có họ retriever late-interaction như ColBERT.
 - Chưa có adaptive/corrective retrieval controller.
 - Chưa có long-document hierarchy ngoài parent-child chunking.
 - Chưa có graph-based retrieval.
-- Chưa có multi-hop hoặc agentic retrieval loop.
 - Evaluation đã tốt hơn, nhưng chưa align đầy đủ với các RAG evaluation framework phổ biến.
 
 ## Các Wave Ưu Tiên
@@ -48,7 +49,7 @@ Các khoảng trống chính:
 
 | Ưu tiên | Technique ID | Nguồn | Vì sao quan trọng | Mục tiêu triển khai |
 | --- | --- | --- | --- | --- |
-| P0 | `bm25_hybrid_rerank` | BM25 + dense + cross-encoder production pattern | Baseline thực tế mạnh; tránh so sánh technique mới với baseline quá yếu | BM25, dense retrieval, score fusion, optional reranker |
+| ✅ Done | `bm25_hybrid_rerank` | BM25 + dense + cross-encoder production pattern | Baseline thực tế mạnh; tránh so sánh technique mới với baseline quá yếu | Đã có: BM25, dense, RRF fusion, strict cross-encoder reranker |
 | P0 | `dpr_2020` | [Dense Passage Retrieval](https://arxiv.org/abs/2004.04906) | Nền tảng của dense retrieval cho open-domain QA | Dense retriever paper-inspired dùng embedding hiện đại |
 | P0 | `fid_2020` | [Fusion-in-Decoder](https://arxiv.org/abs/2007.01282) | Cách tiếp cận kinh điển: retrieve nhiều passage rồi generate với nhiều evidence | Context builder/generator giữ tách biệt từng passage |
 | P0 | `lost_in_middle_context_ordering` | [Lost in the Middle](https://arxiv.org/abs/2307.03172) | Bài học thực tế về thứ tự context trong prompt dài | Thử nghiệm context ordering: best-first, edge-biased, interleaved |
@@ -144,6 +145,28 @@ Tiêu chí hoàn thành:
 - Giữ internal metrics ổn định kể cả khi external libraries là optional.
 - Judge metrics phải có prompt/version metadata.
 - Report nên hỗ trợ so sánh hai run và liệt kê regressions.
+
+### Wave 6: Agentic Và Reasoning RAG (Frontier 2025–2026)
+
+Wave này phản ánh cú dịch chuyển paradigm của field: từ pipeline tĩnh
+`retrieve → generate` sang agent tự điều phối truy hồi (reasoning ↔ retrieval).
+Phân biệt rõ hai nhánh theo khả năng triển khai trong một lab **không có hạ tầng
+train**:
+
+| Ưu tiên | Technique ID | Nguồn | Vì sao quan trọng | Mục tiêu triển khai |
+| --- | --- | --- | --- | --- |
+| ✅ Done | `agentic_rag_arag` | [A-RAG, 2602.03442](https://arxiv.org/abs/2602.03442) | Agentic RAG inference-time, không cần RL — điểm ngọt cho lab này | Đã có: controller đa bước, tool keyword/semantic/hybrid/chunk_read, guard + trace |
+| P2 | `adaptive_router` | [Adaptive-RAG, 2403.14403](https://arxiv.org/abs/2403.14403) | Router quyết định câu nào cần agentic, câu nào một-lượt là đủ (chống over-search) | Query-complexity classifier chọn giữa single-pass và agentic loop |
+| concept-only | `search_r1` / `autosearch` | [Search-R1, 2503.09516](https://arxiv.org/abs/2503.09516); [AutoSearch, 2604.17337](https://arxiv.org/abs/2604.17337) | RL-trained search agent (SOTA) | Chỉ ghi chú concept — cần hạ tầng RL training, ngoài phạm vi repo |
+| P2 | `rag_robustness_eval` | [Attacks/Defenses taxonomy, 2604.08304](https://arxiv.org/pdf/2604.08304) | Frontier 2026: đánh giá RAG dưới poisoning/prompt-injection | Trục evaluation mới: robustness, không phải retriever |
+
+Tiêu chí hoàn thành:
+
+- Agentic methods phải emit structured trace (steps, tool, subqueries, evidence)
+  và có `max_steps` + cost guard.
+- Controller phải tái sử dụng được giữa các technique (A-RAG, CRAG, Adaptive-RAG,
+  IRCoT) bằng cách thay policy, không viết lại loop.
+- Bản RL chỉ dừng ở concept-only cho tới khi repo có hạ tầng train.
 
 ## Thứ Tự Triển Khai Đề Xuất
 

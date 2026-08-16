@@ -1,0 +1,1 @@
+"""Naive RAG technique."""

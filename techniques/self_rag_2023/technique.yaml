@@ -14,9 +14,10 @@
     "notes": "Implements only a post-generation critique inspired by Self-RAG support checking. It does not train reflection tokens or reproduce adaptive retrieval/beam search."
   },
   "stage": ["generation", "verification"],
+  "capabilities": {"evaluation_profiles": ["retrieval", "single_hop_rag", "citation_rag"], "custom_artifacts": false},
   "requires": ["openai_chat"],
   "best_for": ["citation_sensitive_qa", "factuality_checks", "production_review_gates"],
   "weak_for": ["strict_latency_constraints", "deterministic_audits", "table_heavy_documents"],
-  "config": "config.yaml",
-  "custom_register": "custom/register.py"
+  "config": null,
+  "custom_register": null
 }

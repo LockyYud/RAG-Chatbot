@@ -50,12 +50,10 @@ RAG-Fusion can hurt when:
 
 ```bash
 python -m raglab.cli.main ingest \
-  --config techniques/rag_fusion_2024/config.yaml \
   --input datasets/sample/docs \
   --output artifacts/rag_fusion_2024
 
 python -m raglab.cli.main eval \
-  --config techniques/rag_fusion_2024/config.yaml \
   --artifact artifacts/rag_fusion_2024 \
   --dataset datasets/sample/qa.jsonl \
   --output benchmarks/results/rag_fusion_2024_eval.json

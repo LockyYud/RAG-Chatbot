@@ -1,27 +1,36 @@
 [project]
 name = "rag-pipeline-lab"
-version = "0.1.0"
+version = "0.2.0"
 description = "A full-stack lab for benchmarking RAG pipeline strategies."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "litellm>=1.86.0",
+]
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.2",
   "mypy>=1.10",
   "pytest>=8",
   "pytest-cov>=5",
   "ruff>=0.5",
+  "setuptools>=68",
 ]
 research = [
+  "datasets>=2.20",
   "numpy>=1.26",
-  "openai>=1.40",
+  "pandas>=2.2",
+  "pyarrow>=16",
   "pydantic>=2.7",
   "pyyaml>=6",
 ]
 vector = [
   "faiss-cpu>=1.8",
   "numpy>=1.26",
+]
+rerank = [
+  "sentence-transformers>=3.0",
 ]
 
 [project.scripts]
@@ -32,12 +41,19 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["raglab*", "evaluation*"]
-exclude = ["datasets*", "techniques*", "benchmarks*", "tests*"]
+include = ["raglab*", "evaluation*", "techniques*"]
+exclude = ["datasets*", "benchmarks*", "tests*"]
+
+[tool.setuptools.package-data]
+"*" = ["technique.yaml", "README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true
 
 [tool.ruff]
 line-length = 120

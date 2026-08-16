@@ -27,9 +27,10 @@
     "variant": "RAG-Sequence"
   },
   "stage": ["indexing", "retrieval", "context_construction", "generation"],
+  "capabilities": {"evaluation_profiles": ["retrieval", "single_hop_rag", "citation_rag"], "custom_artifacts": false},
   "requires": ["openai_embeddings", "openai_chat"],
   "best_for": ["factual_qa", "prose_documents", "documentation", "policy_documents"],
   "weak_for": ["multi_hop_questions", "table_heavy_documents", "exact_span_citations", "aggregation_questions"],
-  "config": "config.yaml",
-  "custom_register": "custom/register.py"
+  "config": null,
+  "custom_register": null
 }

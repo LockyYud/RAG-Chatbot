@@ -35,3 +35,21 @@ def write_jsonl(path: str | Path, rows: list[dict[str, Any]]) -> None:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False))
             handle.write("\n")
+
+
+def iter_input_files(input_path: str | Path) -> list[Path]:
+    """Return the sorted list of text/markdown files under *input_path*.
+
+    Accepts either a single file or a directory.  Used by every pipeline's
+    ``ingest()`` to walk the input documents.
+    """
+    source = Path(input_path)
+    if not source.exists():
+        raise FileNotFoundError(f"Input document path does not exist: {source}")
+    if source.is_file():
+        return [source]
+    allowed = {".txt", ".md", ".markdown"}
+    files = sorted(path for path in source.rglob("*") if path.is_file() and path.suffix.lower() in allowed)
+    if not files:
+        raise ValueError(f"No text or Markdown documents found under input path: {source}")
+    return files

@@ -13,9 +13,10 @@
     "status": "runnable"
   },
   "stage": ["chunking", "retrieval", "context_construction", "generation"],
-  "requires": [],
+  "capabilities": {"evaluation_profiles": ["retrieval", "single_hop_rag", "citation_rag"], "custom_artifacts": false},
+  "requires": ["llm_embeddings"],
   "best_for": ["smoke_tests", "dataset_format_validation"],
   "weak_for": ["empirical_dense_retrieval_claims", "production_answer_quality"],
-  "config": "config.yaml",
+  "config": null,
   "custom_register": null
 }

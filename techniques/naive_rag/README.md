@@ -37,12 +37,10 @@ Do not use this baseline for empirical claims about dense retrieval or generatio
 
 ```bash
 python -m raglab.cli.main ingest \
-  --config techniques/naive_rag/config.yaml \
   --input datasets/sample/docs \
   --output artifacts/naive_rag
 
 python -m raglab.cli.main eval \
-  --config techniques/naive_rag/config.yaml \
   --artifact artifacts/naive_rag \
   --dataset datasets/sample/qa.jsonl \
   --output benchmarks/results/naive_rag_eval.json

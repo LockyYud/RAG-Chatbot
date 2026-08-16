@@ -13,9 +13,10 @@
     "status": "template"
   },
   "stage": ["retrieval"],
+  "capabilities": {"evaluation_profiles": ["retrieval", "single_hop_rag"], "custom_artifacts": false},
   "requires": ["openai_embeddings", "openai_chat"],
   "best_for": [],
   "weak_for": [],
-  "config": "config.yaml",
-  "custom_register": "custom/register.py"
+  "config": null,
+  "custom_register": null
 }

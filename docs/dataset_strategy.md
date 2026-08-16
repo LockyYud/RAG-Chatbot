@@ -24,6 +24,10 @@ Nên đi theo chiến lược ba tầng:
 Bộ benchmark mặc định nên có 6 dataset. Mỗi dataset kiểm tra một failure mode khác nhau của RAG, tránh việc một technique
 thắng chỉ vì dataset quá hẹp.
 
+Repo đã có lớp adapter để chuẩn hóa các dataset này về `documents.jsonl`, `queries.jsonl`, `qrels.jsonl`, đồng thời export
+`docs/` và `qa.jsonl` để chạy được với ingest/eval hiện tại. Đây là lớp evaluation fixture, không liên quan tới luồng user
+đưa tài liệu thô vào hệ thống.
+
 | Pack ID | Dataset | Domain | Mode chính | Vì sao chọn | Trạng thái khuyến nghị |
 | --- | --- | --- | --- | --- | --- |
 | `vi_wiki_retrieval` | `mteb/VieQuADRetrieval` | Wikipedia/general knowledge | `retrieval_only` | Nhỏ, có corpus/query/qrels, phù hợp đo BM25/dense/hybrid/rerank tiếng Việt | Core P0 |
@@ -373,11 +377,11 @@ Repo hiện đã có sample `quy_che_tuyen_sinh.md`, nên có thể mở rộng 
 
 | Benchmark pack | Dataset | Ngôn ngữ | Mode | Metrics chính | Technique phù hợp |
 | --- | --- | --- | --- | --- | --- |
-| `local_smoke` | `sample_vi_enterprise` | vi | full_rag | recall@k, citation_accuracy, faithfulness | all |
+| `local_smoke` | `sample_vi_enterprise` | vi | full_rag | recall@k, citation_precision, citation_recall, citation_f1, faithfulness | all |
 | `vi_retrieval_small` | VieQuADRetrieval | vi | retrieval_only | recall@5, mrr, ndcg@10 | BM25, dense, hybrid, RRF |
 | `vi_legal_retrieval` | Vietnamese Legal Documents / ALQAC | vi | retrieval_only + full_rag | recall@k, citation_support, abstention | hybrid, rerank, CRAG |
 | `en_ir_standard` | BEIR subset | en | retrieval_only | ndcg@10, recall@100, mrr | retrieval techniques |
-| `en_open_qa` | Natural Questions sample | en | full_rag | answer_correctness, citation_accuracy | RAG generation |
+| `en_open_qa` | Natural Questions sample | en | full_rag | answer_correctness, citation_precision, citation_recall, citation_f1 | RAG generation |
 | `multi_hop` | HotpotQA / VIMQA / FRAMES | en/vi | full_rag | supporting_fact_recall, answer_correctness | IRCoT, ReAct, GraphRAG |
 | `long_context` | LongGenBench-style synthetic local | en/vi | full_rag | key_point_recall, faithfulness | RAPTOR, context ordering |
 

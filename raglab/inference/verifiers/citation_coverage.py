@@ -9,11 +9,7 @@ class CitationCoverageVerifier(BaseVerifier):
         self.require_citations = require_citations
 
     def verify(self, answer: RAGAnswer, context: BuiltContext) -> VerificationReport:
-        supported = {
-            result.metadata.get("citation")
-            for result in context.results
-            if result.metadata.get("citation")
-        }
+        supported = {result.doc_id for result in context.results}
         unsupported = [citation for citation in answer.citations if citation not in supported]
         cited_count = len(answer.citations)
         covered_count = cited_count - len(unsupported)

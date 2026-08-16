@@ -1,0 +1,18 @@
+{
+  "id": "vi_retrieval_core_v1",
+  "tier": "claim_eligible",
+  "dataset": {
+    "docs": "datasets/processed/vi_wiki_retrieval/docs",
+    "qa": "datasets/processed/vi_wiki_retrieval",
+    "fingerprint": "sha256:3b9f08a65ed7fcef492b8e2eca815ab1e81c2cb46e5c51b96524b4d4dd97cb8e"
+  },
+  "mode": "retrieval_only",
+  "profile": "retrieval",
+  "top_k": 10,
+  "cutoffs": [5, 10, 20],
+  "minimum_queries": 300,
+  "required_baselines": ["parent_child", "naive_rag", "bm25_hybrid_rerank"],
+  "reference_baseline": "bm25_hybrid_rerank",
+  "bootstrap_samples": 10000,
+  "primary_metrics": ["ndcg_at_10", "recall_at_10", "mrr"]
+}

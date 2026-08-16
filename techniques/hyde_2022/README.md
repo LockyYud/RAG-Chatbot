@@ -54,12 +54,10 @@ HyDE can hurt when:
 
 ```bash
 python -m raglab.cli.main ingest \
-  --config techniques/hyde_2022/config.yaml \
   --input datasets/sample/docs \
   --output artifacts/hyde_2022
 
 python -m raglab.cli.main eval \
-  --config techniques/hyde_2022/config.yaml \
   --artifact artifacts/hyde_2022 \
   --dataset datasets/sample/qa.jsonl \
   --output benchmarks/results/hyde_2022_eval.json

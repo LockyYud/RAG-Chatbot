@@ -7,7 +7,7 @@ from typing import Any
 
 from raglab.core.io import write_jsonl
 from raglab.core.text import token_count
-from raglab.providers.openai_compatible import OpenAICompatibleClient
+from raglab.providers.llm_client import LLMClient
 
 QUESTION_TYPES = ["factual", "citation_sensitive", "multi_section", "unanswerable"]
 
@@ -26,7 +26,7 @@ class SyntheticQAGenerator:
         self.max_context_tokens = max_context_tokens
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.client = OpenAICompatibleClient()
+        self.client = LLMClient()
 
     def generate(self, docs_path: str | Path, output_path: str | Path, limit: int = 50) -> list[dict[str, Any]]:
         chunks = _load_text_chunks(docs_path, self.max_context_tokens)

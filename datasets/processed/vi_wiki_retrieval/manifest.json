@@ -1,0 +1,21 @@
+{
+  "dataset_id": "vi_wiki_retrieval",
+  "output_dir": "datasets/processed/vi_wiki_retrieval",
+  "documents": 2490,
+  "queries": 2048,
+  "qrels": 4096,
+  "docs_dir": "datasets/processed/vi_wiki_retrieval/docs",
+  "qa_path": "datasets/processed/vi_wiki_retrieval/qa.jsonl",
+  "id_map_size": 2490,
+  "fingerprint": "sha256:3b9f08a65ed7fcef492b8e2eca815ab1e81c2cb46e5c51b96524b4d4dd97cb8e",
+  "metadata": {
+    "source": "mteb/VieQuADRetrieval",
+    "license": "MIT according to Hugging Face dataset card",
+    "adapter": "viequad_retrieval",
+    "split": "validation",
+    "sampling_seed": 42,
+    "sampled_query_count": 2048,
+    "source_corpus_size": 2490,
+    "corpus_policy": "full_upstream_corpus"
+  }
+}

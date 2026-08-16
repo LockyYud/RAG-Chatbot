@@ -42,11 +42,7 @@ documents
   -> citation coverage verification
 ```
 
-Runnable config:
-
-```text
-techniques/rag_sequence_2020/config.yaml
-```
+Configure constructor parameters with repeatable `--param key=value` flags; the pipeline's resolved configuration is persisted in each artifact.
 
 This implementation is designed for practical document QA over a user-provided corpus.
 

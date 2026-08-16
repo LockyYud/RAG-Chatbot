@@ -61,12 +61,10 @@ This verifier can fail when:
 
 ```bash
 python -m raglab.cli.main ingest \
-  --config techniques/self_rag_2023/config.yaml \
   --input datasets/sample/docs \
   --output artifacts/self_rag_2023
 
 python -m raglab.cli.main eval \
-  --config techniques/self_rag_2023/config.yaml \
   --artifact artifacts/self_rag_2023 \
   --dataset datasets/sample/qa.jsonl \
   --output benchmarks/results/self_rag_2023_eval.json

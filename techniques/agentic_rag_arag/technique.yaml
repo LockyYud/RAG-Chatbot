@@ -1,0 +1,22 @@
+{
+  "id": "agentic_rag_arag",
+  "name": "Agentic RAG (A-RAG-inspired, 2026)",
+  "base": "bm25_hybrid_rerank",
+  "paper": {
+    "title": "A-RAG: Scaling Agentic Retrieval-Augmented Generation via Hierarchical Retrieval Interfaces",
+    "authors": [],
+    "year": 2026,
+    "url": "https://arxiv.org/abs/2602.03442"
+  },
+  "implementation": {
+    "level": "paper_inspired",
+    "status": "runnable"
+  },
+  "stage": ["retrieval", "orchestration", "reranking", "generation"],
+  "capabilities": {"evaluation_profiles": ["retrieval", "multi_hop_rag", "citation_rag"], "custom_artifacts": false},
+  "requires": ["openai_embeddings", "openai_chat"],
+  "best_for": ["multi_hop_questions", "mixed_query_distributions", "auditable_retrieval_trace"],
+  "weak_for": ["latency_sensitive", "simple_single_fact_lookup"],
+  "config": null,
+  "custom_register": null
+}

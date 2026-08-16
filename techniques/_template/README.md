@@ -46,12 +46,10 @@ Describe failure modes and cases where a cheaper baseline is likely enough.
 
 ```bash
 python -m raglab.cli.main ingest \
-  --config techniques/<technique_id>/config.yaml \
   --input datasets/sample/docs \
   --output artifacts/<technique_id>
 
 python -m raglab.cli.main eval \
-  --config techniques/<technique_id>/config.yaml \
   --artifact artifacts/<technique_id> \
   --dataset datasets/sample/qa.jsonl \
   --output benchmarks/results/<technique_id>_eval.json

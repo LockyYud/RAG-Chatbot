@@ -1,21 +1,54 @@
 {
-  "artifact_version": "2",
-  "created_at": "2026-05-22T04:49:41.103341+00:00",
-  "pipeline_name": "parent_child",
-  "config_path": "techniques/parent_child/config.yaml",
-  "config_hash": "c737e04920d3a14e",
-  "input_path": "datasets/sample/docs",
-  "documents": [
-    "chinh_sach_nhan_su",
-    "quy_che_tuyen_sinh"
-  ],
-  "document_count": 2,
-  "block_count": 17,
-  "chunk_count": 7,
-  "node_count": 7,
-  "embedding": {
-    "type": "none"
+  "artifact_version": "3",
+  "pipeline": {
+    "id": "parent_child",
+    "implementation_level": "production_pattern",
+    "config": {
+      "child_size": 100,
+      "child_overlap": 15,
+      "top_k": 6,
+      "rerank_top_k": 4,
+      "rerank_weight": 0.25,
+      "max_context_tokens": 1800
+    },
+    "config_fingerprint": "sha256:a047afe659162285ec42c1d7ae46555392d81877fccc4a17407e6be9bf62d913"
   },
-  "embedding_model": null,
-  "store_backend": null
+  "embedding": {
+    "type": "none",
+    "model": null,
+    "dimension": null
+  },
+  "store": {
+    "backend": "json_memory"
+  },
+  "corpus": {
+    "fingerprint": "sha256:5d3aff8c5da5a82a13423e4a152bbcc4d60e37c6f2713445907750fa4dfda721",
+    "documents": [
+      "chinh_sach_nhan_su",
+      "quy_che_tuyen_sinh"
+    ],
+    "document_count": 2,
+    "block_count": 17,
+    "chunk_count": 7,
+    "node_count": 7
+  },
+  "runtime": {
+    "created_at": "2026-08-11T10:04:08.266515+00:00",
+    "raglab_version": "0.2.0",
+    "input_path": "datasets/sample/docs",
+    "source_fingerprint": "sha256:c93efc4faafe4f77df1b364baf958de49dda4a3bab177cf685ec6087e8d44936",
+    "dependency_versions": {
+      "litellm": "1.86.0",
+      "numpy": "2.4.6",
+      "faiss-cpu": null,
+      "sentence-transformers": "5.7.0",
+      "torch": "2.13.0"
+    }
+  },
+  "extra": {
+    "pipeline_name": "Parent-Child Chunking (small-to-big retrieval)",
+    "artifact_files": {
+      "nodes.json": "sha256:6b6e8139e2f040c905f81f7a4b5bfe2c1762bd42a4ab13bf07bbcab54c50e5ab"
+    }
+  }
 }

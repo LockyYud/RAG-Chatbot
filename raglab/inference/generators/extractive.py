@@ -8,7 +8,12 @@ from raglab.core.text import first_relevant_sentence
 class ExtractiveGenerator(BaseGenerator):
     def generate(self, query: str, context: BuiltContext) -> RAGAnswer:
         if not context.results:
-            return RAGAnswer(query=query, answer="Không tìm thấy đủ bằng chứng trong tài liệu.", contexts=[])
+            return RAGAnswer(
+                query=query,
+                answer="Không tìm thấy đủ bằng chứng trong tài liệu.",
+                contexts=[],
+                abstained=True,
+            )
         best = context.results[0]
         answer = first_relevant_sentence(best.text, query)
         return RAGAnswer(query=query, answer=answer, contexts=context.results, metadata={"mode": "extractive"})
@@ -22,10 +27,11 @@ class CitationExtractiveGenerator(BaseGenerator):
                 answer="Không tìm thấy đủ bằng chứng trong tài liệu.",
                 contexts=[],
                 citations=[],
+                abstained=True,
             )
         best = context.results[0]
         citation_id = best.metadata.get("citation_id", "C1")
-        citation = best.metadata.get("citation", best.chunk_id)
+        citation = best.doc_id
         answer = first_relevant_sentence(best.text, query)
         return RAGAnswer(
             query=query,

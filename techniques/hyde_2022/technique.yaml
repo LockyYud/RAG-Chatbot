@@ -14,9 +14,10 @@
     "notes": "Implements N-sample hypothetical document generation and averaged embeddings, but uses OpenAI-compatible APIs instead of the original model stack."
   },
   "stage": ["query_transformation", "retrieval"],
+  "capabilities": {"evaluation_profiles": ["retrieval", "single_hop_rag"], "custom_artifacts": false},
   "requires": ["openai_embeddings", "openai_chat"],
   "best_for": ["vague_queries", "zero_shot_dense_retrieval", "semantic_search", "prose_documents"],
   "weak_for": ["exact_keyword_lookup", "strict_latency_constraints", "table_heavy_documents"],
-  "config": "config.yaml",
-  "custom_register": "custom/register.py"
+  "config": null,
+  "custom_register": null
 }

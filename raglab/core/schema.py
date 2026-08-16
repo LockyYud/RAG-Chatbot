@@ -1,9 +1,56 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 BlockType = Literal["title", "heading", "paragraph", "table", "figure", "list", "footnote"]
+QueryMode = Literal["full_rag", "retrieval_only"]
+VerificationStatus = Literal["run", "skipped"]
+JSONValue = None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
+
+
+class PipelineArtifactSpec(TypedDict):
+    id: str
+    implementation_level: str
+    config: dict[str, JSONValue]
+    config_fingerprint: str
+
+
+class EmbeddingArtifactSpec(TypedDict):
+    model: str | None
+    dimension: int | None
+    type: str
+
+
+class StoreArtifactSpec(TypedDict):
+    backend: str | None
+
+
+class CorpusArtifactSpec(TypedDict):
+    fingerprint: str
+    documents: list[str]
+    document_count: int
+    block_count: int
+    chunk_count: int
+    node_count: int
+
+
+class RuntimeArtifactSpec(TypedDict):
+    created_at: str
+    raglab_version: str
+    input_path: str
+    source_fingerprint: str | None
+    dependency_versions: dict[str, str | None]
+
+
+class ArtifactManifest(TypedDict, total=False):
+    artifact_version: str
+    pipeline: PipelineArtifactSpec
+    embedding: EmbeddingArtifactSpec
+    store: StoreArtifactSpec
+    corpus: CorpusArtifactSpec
+    runtime: RuntimeArtifactSpec
+    extra: dict[str, JSONValue]
 
 
 @dataclass(slots=True)
@@ -92,6 +139,7 @@ class RAGAnswer:
     answer: str
     contexts: list[RetrievalResult]
     citations: list[str] = field(default_factory=list)
+    abstained: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -103,6 +151,7 @@ class VerificationReport:
     grounded: bool
     citation_coverage: float
     evidence_count: int
+    status: VerificationStatus = "run"
     unsupported_citations: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 

@@ -5,18 +5,48 @@ from collections import Counter
 
 from raglab.core.interfaces import BaseRetriever, BaseVectorStore
 from raglab.core.schema import IndexedNode, RetrievalResult
-from raglab.core.text import cosine, dense_cosine, term_vector, tokenize
-from raglab.indexing.embeddings import OpenAIEmbedder
+from raglab.core.text import dense_cosine, tokenize
+from raglab.indexing.embeddings import Embedder
 
 
 class DenseRetriever(BaseRetriever):
-    def __init__(self, nodes: list[IndexedNode], **_: object) -> None:
+    """Retrieve using pre-computed neural embeddings (cosine similarity).
+
+    Nodes must already have ``embedding`` populated — call
+    ``Embedder().embed_nodes(nodes)`` during ingest before saving.
+    At query time one embedding call is made to embed the question.
+    """
+
+    def __init__(
+        self,
+        nodes: list[IndexedNode],
+        vector_store: BaseVectorStore | None = None,
+        embedding_model: str | None = None,
+        **_: object,
+    ) -> None:
+        missing = [node.node_id for node in nodes if node.embedding is None]
+        if missing:
+            raise RuntimeError(
+                f"DenseRetriever requires embeddings saved during ingest "
+                f"({len(missing)} node(s) have no embedding). "
+                f"Call Embedder().embed_nodes(nodes) in ingest() before save_nodes()."
+            )
         self.nodes = nodes
-        self.vectors = {node.node_id: term_vector(node.text_for_embedding) for node in nodes}
+        self.vector_store = vector_store
+        self.embedder = Embedder(model=embedding_model)
 
     def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
-        query_vector = term_vector(query)
-        scored = [(node, cosine(query_vector, self.vectors[node.node_id])) for node in self.nodes]
+        query_vector = self.embedder.embed_texts([query])[0]
+        expected_dimension = len(self.nodes[0].embedding or []) if self.nodes else len(query_vector)
+        if len(query_vector) != expected_dimension:
+            raise RuntimeError(
+                f"Query embedding dimension {len(query_vector)} does not match artifact dimension "
+                f"{expected_dimension} for model '{self.embedder.model}'."
+            )
+        if self.vector_store is not None:
+            scored = self.vector_store.search(query_vector, top_k)
+        else:
+            scored = [(node, dense_cosine(query_vector, node.embedding or [])) for node in self.nodes]
         return _to_results(scored, top_k)
 
 
@@ -51,64 +81,23 @@ class BM25Retriever(BaseRetriever):
 
 
 class HybridRetriever(BaseRetriever):
-    def __init__(self, nodes: list[IndexedNode], alpha: float = 0.5, **_: object) -> None:
-        self.nodes = nodes
-        self.alpha = alpha
-        self.dense = DenseRetriever(nodes)
-        self.bm25 = BM25Retriever(nodes)
+    """Combine dense (embedding) and sparse (BM25) retrieval with linear interpolation.
 
-    def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
-        dense = self.dense.retrieve(query, len(self.nodes))
-        sparse = self.bm25.retrieve(query, len(self.nodes))
-        dense_scores = _normalize({result.node_id: result.score for result in dense})
-        sparse_scores = _normalize({result.node_id: result.score for result in sparse})
-        scored = []
-        by_id = {node.node_id: node for node in self.nodes}
-        for node_id, node in by_id.items():
-            score = self.alpha * dense_scores.get(node_id, 0.0) + (1 - self.alpha) * sparse_scores.get(node_id, 0.0)
-            scored.append((node, score))
-        return _to_results(scored, top_k)
+    *alpha* = 1.0 → pure dense, *alpha* = 0.0 → pure BM25.
+    Nodes must have embeddings saved during ingest (same requirement as DenseRetriever).
+    """
 
-
-class OpenAIDenseRetriever(BaseRetriever):
-    def __init__(
-        self,
-        nodes: list[IndexedNode],
-        vector_store: BaseVectorStore | None = None,
-        embedding_model: str = "text-embedding-3-small",
-        **_: object,
-    ) -> None:
-        missing = [node.node_id for node in nodes if node.embedding is None]
-        if missing:
-            raise RuntimeError(
-                "OpenAI dense retrieval requires embeddings saved during ingest. "
-                "Use indexing.embedding.type=openai in the pipeline config."
-            )
-        self.nodes = nodes
-        self.vector_store = vector_store
-        self.embedder = OpenAIEmbedder(model=embedding_model)
-
-    def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
-        query_vector = self.embedder.embed_texts([query])[0]
-        if self.vector_store is not None:
-            scored = self.vector_store.search(query_vector, top_k)
-        else:
-            scored = [(node, dense_cosine(query_vector, node.embedding or [])) for node in self.nodes]
-        return _to_results(scored, top_k)
-
-
-class OpenAIHybridRetriever(BaseRetriever):
     def __init__(
         self,
         nodes: list[IndexedNode],
         vector_store: BaseVectorStore | None = None,
         alpha: float = 0.5,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str | None = None,
         **_: object,
     ) -> None:
         self.nodes = nodes
         self.alpha = alpha
-        self.dense = OpenAIDenseRetriever(nodes, vector_store=vector_store, embedding_model=embedding_model)
+        self.dense = DenseRetriever(nodes, vector_store=vector_store, embedding_model=embedding_model)
         self.bm25 = BM25Retriever(nodes)
 
     def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
@@ -122,6 +111,68 @@ class OpenAIHybridRetriever(BaseRetriever):
             score = self.alpha * dense_scores.get(node_id, 0.0) + (1 - self.alpha) * sparse_scores.get(node_id, 0.0)
             scored.append((node, score))
         return _to_results(scored, top_k)
+
+
+class RRFHybridRetriever(BaseRetriever):
+    """Fuse dense + BM25 result lists with Reciprocal Rank Fusion (Cormack et al., 2009).
+
+    Unlike :class:`HybridRetriever` (linear interpolation of normalized scores),
+    RRF ignores the raw scores entirely and fuses on *rank* alone::
+
+        RRF_score(d) = Σ_i  1 / (k + rank_i(d))
+
+    This sidesteps the score-scale mismatch between BM25 (unbounded log-TF-IDF)
+    and cosine similarity ([-1, 1]) without any per-corpus ``alpha`` tuning —
+    which is exactly why RRF is the default fusion in production hybrid search.
+
+    ``k`` defaults to 60 (the value from the original paper); larger ``k``
+    flattens the contribution of top ranks, smaller ``k`` sharpens it.
+
+    Nodes must have embeddings saved during ingest (same requirement as
+    :class:`DenseRetriever`).
+    """
+
+    def __init__(
+        self,
+        nodes: list[IndexedNode],
+        vector_store: BaseVectorStore | None = None,
+        k: float = 60.0,
+        candidate_k: int | None = None,
+        embedding_model: str | None = None,
+        **_: object,
+    ) -> None:
+        self.nodes = nodes
+        self.k = k
+        # How many candidates to pull from each sub-retriever before fusing.
+        # Defaults to the full corpus so no relevant node is dropped pre-fusion.
+        self.candidate_k = candidate_k or len(nodes)
+        self.dense = DenseRetriever(nodes, vector_store=vector_store, embedding_model=embedding_model)
+        self.bm25 = BM25Retriever(nodes)
+
+    def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
+        dense = self.dense.retrieve(query, self.candidate_k)
+        sparse = self.bm25.retrieve(query, self.candidate_k)
+        fused = reciprocal_rank_fusion([dense, sparse], k=self.k)
+        by_id = {node.node_id: node for node in self.nodes}
+        scored = [(by_id[node_id], score) for node_id, score in fused if node_id in by_id]
+        return _to_results(scored, top_k)
+
+
+def reciprocal_rank_fusion(
+    result_lists: list[list[RetrievalResult]],
+    k: float = 60.0,
+) -> list[tuple[str, float]]:
+    """Fuse several ranked result lists into one ``(node_id, rrf_score)`` ranking.
+
+    Pure and side-effect free so it can be unit-tested without a retriever or
+    any API call.  A node absent from a list simply contributes nothing for
+    that list.  Results are returned sorted by descending RRF score.
+    """
+    scores: dict[str, float] = {}
+    for results in result_lists:
+        for result in results:
+            scores[result.node_id] = scores.get(result.node_id, 0.0) + 1.0 / (k + result.rank)
+    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
 
 def _normalize(scores: dict[str, float]) -> dict[str, float]:

@@ -1,55 +1,42 @@
 # Adding Techniques
 
-Techniques live under `techniques/<technique_id>/` and should be runnable through the shared pipeline rather than custom
-scripts.
+Techniques are bundled Python packages under `techniques/<technique_id>/` and are discovered through package resources.
 
-## Required Files
+## Required files
 
 ```text
 techniques/<technique_id>/
-  README.md
+  __init__.py
+  pipeline.py
   technique.yaml
-  config.yaml
-  custom/
-    register.py
+  README.md
 ```
 
-Use `custom/register.py` only when built-in registry components are not enough.
+Copy `techniques/_template`, set an implementation level (`faithful_reproduction`, `paper_inspired`,
+`production_pattern`, `concept_only`, or `baseline`), and implement a concrete `BasePipeline`.
 
-## Config Contract
+Declare `capabilities.evaluation_profiles` in `technique.yaml` (`retrieval`, `single_hop_rag`,
+`multi_hop_rag`, and/or `citation_rag`) and whether the technique writes `custom_artifacts`. Run
+`raglab doctor --technique <id>` before a provider-dependent benchmark.
 
-Pipeline stages are configured by type and params:
+Every constructor parameter must be assigned to an attribute with the same name so `resolved_config()` can persist the
+complete configuration in artifact v3. Declare `query_override_fields` explicitly. Only fields that do not change the
+persisted index belong there; embedding model, chunking, enrichment, and store parameters must remain locked.
 
-```json
-{
-  "processing": {
-    "parser": {"type": "markdown"},
-    "chunker": {"type": "recursive", "params": {"chunk_size": 220, "overlap": 30}},
-    "enrichers": [{"type": "section_title"}]
-  },
-  "indexing": {
-    "embedding": {"type": "openai", "params": {"model": "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"}},
-    "store": {"type": "json_memory"}
-  },
-  "inference": {
-    "retriever": {"type": "openai_dense", "params": {"top_k": 5}},
-    "reranker": {"type": "none"},
-    "context_builder": {"type": "citation_context"},
-    "generator": {"type": "openai_chat"},
-    "verifier": {"type": "citation_coverage"}
-  }
-}
-```
+Both methods must use the shared contracts:
 
-Supported vector stores:
+- `ingest()` calls `build_ingest_manifest(..., pipeline_config=self.resolved_config())` and saves artifact v3.
+- Custom index state (for example a graph, tree, or token index) is written under the artifact directory before
+  `save_nodes()`; v3 records and validates checksums for every file in that bundle.
+- `query()` calls `self.load_artifact()` before provider calls.
+- `retrieval_only` performs retrieval/context construction only and returns `skipped_verification()`.
+- Public citations are canonical document IDs; `[C1]` markers are prompt-local identifiers.
+- Learned rerankers fail in strict mode. Demo fallback must be explicitly enabled and reported as the effective component.
 
-- `json_memory`: zero-dependency default for small experiments.
-- `faiss_local`: optional local backend for larger dense retrieval experiments.
+## Acceptance checklist
 
-## Acceptance Checklist
-
-- Technique metadata states whether it is baseline, production pattern, paper-inspired, or concept-only.
-- Config validates and runs through `raglab ingest` and `raglab eval`.
-- Technique is compared against at least one baseline on the same QA set.
-- README documents weak cases and what is not reproduced.
-- Custom code records useful runtime metadata where relevant.
+- `raglab techniques list` discovers the technique from an installed wheel and outside the checkout.
+- Artifact mismatch, locked overrides, missing dependencies, and invalid modes fail with actionable messages.
+- Offline tests inject fake providers; they do not download models or call APIs.
+- The technique is compared with at least one baseline on the same frozen dataset and report schema.
+- README states fidelity level, what is not reproduced, strong cases, weak cases, and expected cost.
