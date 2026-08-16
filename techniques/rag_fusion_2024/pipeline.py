@@ -29,12 +29,11 @@ import time
 from typing import Any
 
 from raglab.core.base import BasePipeline
-from raglab.core.interfaces import BaseRetriever
 from raglab.core.io import iter_input_files
 from raglab.core.measure import build_ingest_manifest, build_query_metadata, skipped_verification
 from raglab.core.schema import ArtifactManifest, IndexedNode, RAGAnswer, RetrievalResult
 from raglab.core.text import dense_cosine, token_count
-from raglab.indexing.artifacts import load_vector_store, save_nodes
+from raglab.indexing.artifacts import default_store_backend, load_vector_store, save_nodes
 from raglab.indexing.embeddings import Embedder
 from raglab.inference.context_builders.citation_context import CitationContextBuilder
 from raglab.inference.generators.chat import ChatGenerator
@@ -44,13 +43,19 @@ from raglab.processing.chunkers.recursive import RecursiveChunker
 from raglab.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
 from raglab.processing.enrichers.basic import SectionTitleEnricher
 from raglab.processing.parsers.text_parser import TextParser
-from raglab.providers.llm_client import LLMClient, check_provider_ready
+from raglab.providers.llm_client import LLMClient, capture_provider_usage, check_provider_ready
 
 # ─── The novelty ─────────────────────────────────────────────────────────────
 
 
-class RAGFusionRetriever(BaseRetriever):
-    """Generate alternative queries, dense-search each, fuse with RRF."""
+class RAGFusionRetriever:
+    """Generate alternative queries, dense-search each, fuse with RRF.
+
+    Not a ``BaseRetriever``: its ``retrieve()`` returns ``(results, metadata)``,
+    not a bare list — see that method's docstring for why. Nothing calls this
+    class through the ``BaseRetriever`` abstraction, so the interface mismatch
+    is intentional, not an oversight.
+    """
 
     def __init__(
         self,
@@ -77,9 +82,19 @@ class RAGFusionRetriever(BaseRetriever):
         self.max_tokens = max_tokens
         self.embedder = Embedder(model=embedding_model)
         self.client = LLMClient()
-        self.last_metadata: dict[str, Any] = {}
 
-    def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
+    def retrieve(self, query: str, top_k: int) -> tuple[list[RetrievalResult], dict[str, Any]]:
+        """Return (results, runtime_metadata) — not a bare list.
+
+        Deliberately not ``BaseRetriever.retrieve()``'s shape and not stored as
+        ``self.last_metadata``: this retriever calls an LLM before it can even
+        search (``_generate_queries``), a wide window during which a second
+        concurrent ``query()`` call on the same shared, already-loaded pipeline
+        (``raglab eval/bench --concurrency``) could interleave. A
+        write-then-read-back on ``self`` would let one query's runtime
+        metadata get silently attached to a different query's answer. Returning
+        the metadata alongside the results keeps it call-local instead.
+        """
         # Step 1: LLM generates Q alternative phrasings of the original query.
         generated_queries, gen_meta = self._generate_queries(query)
         all_queries = [query, *generated_queries]
@@ -123,14 +138,14 @@ class RAGFusionRetriever(BaseRetriever):
                 )
             )
 
-        self.last_metadata = {
+        runtime_metadata = {
             "method": "rag_fusion",
             "queries": all_queries,
             "embedding_input_count": len(all_queries),
             "estimated_embedding_tokens": sum(token_count(item) for item in all_queries),
             **gen_meta,
         }
-        return results
+        return results, runtime_metadata
 
     def _generate_queries(self, query: str) -> tuple[list[str], dict[str, Any]]:
         completion = self.client.create_chat_completion(
@@ -243,13 +258,14 @@ class RAGFusionPipeline(BasePipeline):
 
         chunks = RecursiveChunker(chunk_size=self.chunk_size, overlap=self.chunk_overlap).chunk(blocks)
         nodes = SectionTitleEnricher().enrich(chunks)
-        nodes = Embedder(
-            model=self.embedding_model,
-            batch_size=self.embedding_batch_size,
-        ).embed_nodes(nodes)
+        with capture_provider_usage() as embedding_usage:
+            nodes = Embedder(
+                model=self.embedding_model,
+                batch_size=self.embedding_batch_size,
+            ).embed_nodes(nodes)
 
         embedding_spec = {"type": "dense", "model": self.embedding_model}
-        store_backend = "json_memory"
+        store_backend = default_store_backend(len(nodes), has_embeddings=True)
         manifest = build_ingest_manifest(
             pipeline_id=self.id,
             pipeline_name=self.name,
@@ -262,6 +278,7 @@ class RAGFusionPipeline(BasePipeline):
             embedding_spec=embedding_spec,
             store_backend=store_backend,
         )
+        manifest["extra"]["embedding_usage"] = embedding_usage.to_dict()
         save_nodes(output_path, nodes, manifest, store_spec={"type": store_backend})
         return manifest
 
@@ -292,7 +309,7 @@ class RAGFusionPipeline(BasePipeline):
 
         # === The RAG-Fusion step ===
         retriever = self._retriever
-        retrieved = retriever.retrieve(question, self.top_k)
+        retrieved, retrieval_runtime = retriever.retrieve(question, self.top_k)
         # ===========================
 
         reranked = NoReranker().rerank(question, retrieved, self.top_k)
@@ -320,7 +337,7 @@ class RAGFusionPipeline(BasePipeline):
                 context=context,
                 verification=verification,
                 artifact_manifest=manifest,
-                retrieval_runtime=retriever.last_metadata,
+                retrieval_runtime=retrieval_runtime,
                 retriever_kind="rag_fusion",
                 question=question,
                 answer_metadata=dict(answer.metadata),

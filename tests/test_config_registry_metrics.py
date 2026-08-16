@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from evaluation.metrics import evaluate_prediction_rows, evaluate_predictions
 from raglab.benchmarks.runner import _query_metric_name
 from raglab.benchmarks.statistics import paired_bootstrap_delta
@@ -99,10 +101,40 @@ def test_suite_contract_locks_runs_and_rejects_ineligible_claims(tmp_path) -> No
         f'{{"id":"s","tier":"claim_eligible","dataset":{{"docs":"d","qa":"{fixture}","fingerprint":"sha256:fixture"}},'
         '"mode":"retrieval_only","top_k":5,"required_baselines":["bm25"],"minimum_queries":1,'
         '"reference_baseline":"bm25","cutoffs":[5],"bootstrap_samples":100,"primary_metrics":["mrr"],'
-        '"warmup_queries":1}',
+        '"warmup_queries":1,"concurrency":1,"latency_sample_size":5}',
         encoding="utf-8",
     )
     suite = load_suite(suite_path)
     assert resolve_suite(suite, docs=None, qa=None, mode=None, top_k=None)["docs"] == "d"
     verdict = claim_eligibility({**suite, "tier": "smoke_only"}, [], "missing.jsonl")
     assert verdict["eligible"] is False
+
+    # concurrency/latency_sample_size are locked exactly like warmup_queries:
+    # no explicit value from the caller resolves to the suite's, an explicit
+    # matching value is accepted, and a conflicting one is rejected outright.
+    resolved = resolve_suite(
+        suite, docs=None, qa=None, mode=None, top_k=None, concurrency=None, latency_sample_size=None
+    )
+    assert resolved["concurrency"] == 1
+    assert resolved["latency_sample_size"] == 5
+    resolve_suite(suite, docs=None, qa=None, mode=None, top_k=None, concurrency=1, latency_sample_size=5)
+    with pytest.raises(ValueError, match="Suite locks concurrency"):
+        resolve_suite(suite, docs=None, qa=None, mode=None, top_k=None, concurrency=8)
+    with pytest.raises(ValueError, match="Suite locks latency_sample_size"):
+        resolve_suite(suite, docs=None, qa=None, mode=None, top_k=None, latency_sample_size=0)
+
+
+def test_claim_eligible_suite_requires_concurrency_protocol_fields(tmp_path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "manifest.json").write_text('{"fingerprint":"sha256:fixture"}', encoding="utf-8")
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        f'{{"id":"s","tier":"claim_eligible","dataset":{{"docs":"d","qa":"{fixture}","fingerprint":"sha256:fixture"}},'
+        '"mode":"retrieval_only","top_k":5,"required_baselines":["bm25"],"minimum_queries":1,'
+        '"reference_baseline":"bm25","cutoffs":[5],"bootstrap_samples":100,"primary_metrics":["mrr"],'
+        '"warmup_queries":1,"concurrency":4,"latency_sample_size":0}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="latency_sample_size must be at least 1 when suite.concurrency > 1"):
+        load_suite(suite_path)

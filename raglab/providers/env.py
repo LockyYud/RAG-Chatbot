@@ -30,3 +30,10 @@ def env_float(name: str, default: float = 0.0) -> float:
     if value is None or value == "":
         return default
     return float(value)
+
+
+def env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return int(value)

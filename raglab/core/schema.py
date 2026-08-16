@@ -22,8 +22,13 @@ class EmbeddingArtifactSpec(TypedDict):
     type: str
 
 
-class StoreArtifactSpec(TypedDict):
+class StoreArtifactSpec(TypedDict, total=False):
     backend: str | None
+    # Present only when at least one node carries an embedding (artifact v4+).
+    # The embeddings themselves live in this sibling .npy file, not in
+    # nodes.json — embeddings_path is relative to the artifact directory.
+    embeddings_path: str | None
+    embeddings_dtype: str | None
 
 
 class CorpusArtifactSpec(TypedDict):

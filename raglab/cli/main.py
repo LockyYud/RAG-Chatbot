@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,9 @@ def main() -> None:
     _add_technique_args(ingest_parser)
     ingest_parser.add_argument("--input", required=True)
     ingest_parser.add_argument("--output", required=True)
+    ingest_parser.add_argument(
+        "--no-embedding-cache", action="store_true", help="Disable the persistent (model, text) embedding cache"
+    )
 
     query_parser = subparsers.add_parser("query", help="Run a single query against saved artifacts")
     _add_technique_args(query_parser)
@@ -117,6 +121,24 @@ def main() -> None:
         default=None,
         help="Abort once estimated pipeline+judge cost exceeds this many USD (checked after each query). "
         "No-op unless pricing env vars are configured for every call type this run makes.",
+    )
+    eval_parser.add_argument(
+        "--no-embedding-cache", action="store_true", help="Disable the persistent (model, text) embedding cache"
+    )
+    eval_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Run the quality pass with this many concurrent workers (default 1 = fully sequential, "
+        "unchanged behavior). Above 1, a sequential --latency-sample-size prefix runs first for honest "
+        "per-request latency, then the remainder runs concurrently for throughput.",
+    )
+    eval_parser.add_argument(
+        "--latency-sample-size",
+        type=int,
+        default=5,
+        help="Number of queries run sequentially before switching to concurrency (only used when "
+        "--concurrency > 1); source of the report's latency_pass p50/p95.",
     )
 
     compare_parser = subparsers.add_parser("compare", help="Evaluate multiple technique/artifact pairs")
@@ -159,6 +181,23 @@ def main() -> None:
         "--preflight",
         action="store_true",
         help="Check suite/dataset/provider/dependency readiness only; do not ingest or query anything",
+    )
+    bench_parser.add_argument(
+        "--no-embedding-cache", action="store_true", help="Disable the persistent (model, text) embedding cache"
+    )
+    bench_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="Run each technique's quality pass with this many concurrent workers. Default 1 (fully "
+        "sequential) unless a suite locks a value; explicit values conflicting with a locked suite are rejected.",
+    )
+    bench_parser.add_argument(
+        "--latency-sample-size",
+        type=int,
+        default=None,
+        help="Number of queries run sequentially before switching to concurrency (only used when "
+        "--concurrency > 1); source of the report's latency_pass p50/p95. Default 5 unless a suite locks a value.",
     )
 
     experiment_parser = subparsers.add_parser("experiment", help="Run a repeatable multi-trial benchmark matrix")
@@ -223,6 +262,11 @@ def main() -> None:
     doctor_parser.add_argument("--mode", choices=["full_rag", "retrieval_only"], default="full_rag")
 
     args = parser.parse_args()
+    if getattr(args, "no_embedding_cache", False):
+        # Simplest way to reach every technique's internal Embedder/LLMClient
+        # construction without threading a new constructor kwarg through every
+        # technique — the cache is already env-var-driven (RAGLAB_EMBEDDING_CACHE).
+        os.environ["RAGLAB_EMBEDDING_CACHE"] = "0"
     if args.command == "ingest":
         pipeline = _resolve_pipeline(args)
         _print(pipeline.ingest(args.input, args.output))
@@ -245,6 +289,8 @@ def main() -> None:
                 judge_spec=judge_spec,
                 profile=args.profile,
                 max_estimated_cost_usd=args.max_estimated_cost_usd,
+                concurrency=args.concurrency,
+                latency_sample_size=args.latency_sample_size,
             )
         except BudgetExceededError as exc:
             raise SystemExit(str(exc)) from exc
@@ -373,6 +419,8 @@ def _bench(args: argparse.Namespace) -> None:
                 top_k=args.top_k,
                 suite_path=args.suite,
                 warmup_queries=args.warmup_queries,
+                concurrency=args.concurrency,
+                latency_sample_size=args.latency_sample_size,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
@@ -398,6 +446,8 @@ def _bench(args: argparse.Namespace) -> None:
             warmup_queries=args.warmup_queries,
             latency_repetitions=args.latency_repetitions,
             max_estimated_cost_usd=args.max_estimated_cost_usd,
+            concurrency=args.concurrency,
+            latency_sample_size=args.latency_sample_size,
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc

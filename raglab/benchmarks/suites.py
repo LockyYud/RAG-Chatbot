@@ -9,6 +9,8 @@ from typing import Any
 from raglab.core.config import load_config
 from raglab.core.io import read_json
 from raglab.core.measure import canonical_fingerprint
+from raglab.indexing.artifacts import DEFAULT_FAISS_NODE_THRESHOLD
+from raglab.providers.env import env_int
 
 
 def load_suite(path: str | Path) -> dict[str, Any]:
@@ -22,7 +24,15 @@ def load_suite(path: str | Path) -> dict[str, Any]:
     if not isinstance(suite["required_baselines"], list):
         raise ValueError("suite.required_baselines must be a list")
     if suite["tier"] == "claim_eligible":
-        frozen_fields = {"reference_baseline", "cutoffs", "bootstrap_samples", "primary_metrics", "warmup_queries"}
+        frozen_fields = {
+            "reference_baseline",
+            "cutoffs",
+            "bootstrap_samples",
+            "primary_metrics",
+            "warmup_queries",
+            "concurrency",
+            "latency_sample_size",
+        }
         missing_frozen = sorted(frozen_fields - set(suite))
         if missing_frozen:
             raise ValueError(f"Claim-eligible suite missing fields: {', '.join(missing_frozen)}")
@@ -37,6 +47,17 @@ def load_suite(path: str | Path) -> dict[str, Any]:
             # (artifact load, first-call model init); at least one discarded
             # warm-up query is required to make that claim credible.
             raise ValueError("Claim-eligible suite.warmup_queries must be a positive integer")
+        if not isinstance(suite["concurrency"], int) or suite["concurrency"] < 1:
+            raise ValueError("Claim-eligible suite.concurrency must be a positive integer")
+        if not isinstance(suite["latency_sample_size"], int) or suite["latency_sample_size"] < 0:
+            raise ValueError("Claim-eligible suite.latency_sample_size must be a non-negative integer")
+        if suite["concurrency"] > 1 and suite["latency_sample_size"] < 1:
+            # With no sequential sample at all, every prediction's latency is
+            # contended — there would be no trustworthy source left for the
+            # report's latency_pass / headline latency_ms_p95 at all.
+            raise ValueError(
+                "Claim-eligible suite.latency_sample_size must be at least 1 when suite.concurrency > 1"
+            )
     dataset = suite["dataset"]
     if not isinstance(dataset, dict) or not isinstance(dataset.get("fingerprint"), str):
         raise ValueError("suite.dataset.fingerprint must lock the prepared dataset revision")
@@ -57,6 +78,8 @@ def resolve_suite(
     mode: str | None,
     top_k: int | None,
     warmup_queries: int | None = None,
+    concurrency: int | None = None,
+    latency_sample_size: int | None = None,
 ) -> dict[str, Any]:
     resolved = dict(suite)
     for key, supplied in (("docs", docs), ("qa", qa)):
@@ -72,6 +95,16 @@ def resolve_suite(
         raise ValueError(f"Suite locks top_k={suite['top_k']}; received {top_k}")
     if "warmup_queries" in suite and warmup_queries is not None and warmup_queries != int(suite["warmup_queries"]):
         raise ValueError(f"Suite locks warmup_queries={suite['warmup_queries']}; received {warmup_queries}")
+    if "concurrency" in suite and concurrency is not None and concurrency != int(suite["concurrency"]):
+        raise ValueError(f"Suite locks concurrency={suite['concurrency']}; received {concurrency}")
+    if (
+        "latency_sample_size" in suite
+        and latency_sample_size is not None
+        and latency_sample_size != int(suite["latency_sample_size"])
+    ):
+        raise ValueError(
+            f"Suite locks latency_sample_size={suite['latency_sample_size']}; received {latency_sample_size}"
+        )
     manifest = dataset_manifest(str(resolved["qa"]))
     if manifest.get("fingerprint") != suite["dataset"]["fingerprint"]:
         raise ValueError(
@@ -81,6 +114,10 @@ def resolve_suite(
     resolved["top_k"] = suite["top_k"]
     if "warmup_queries" in suite:
         resolved["warmup_queries"] = suite["warmup_queries"]
+    if "concurrency" in suite:
+        resolved["concurrency"] = suite["concurrency"]
+    if "latency_sample_size" in suite:
+        resolved["latency_sample_size"] = suite["latency_sample_size"]
     return resolved
 
 
@@ -114,6 +151,22 @@ def claim_eligibility(
     queries = int(manifest.get("queries", 0))
     if minimum and queries < minimum:
         reasons.append(f"dataset has {queries} queries; suite requires {minimum}")
+    if requested_tier == "claim_eligible":
+        # Authoritative, post-ingest check: preflight can only warn that faiss
+        # isn't installed (it can't know the final node count before chunking
+        # happens); this checks the real node count against the real backend
+        # that actually ran, so an environment where faiss silently never
+        # engaged cannot slip through as claim-eligible.
+        threshold = env_int("RAGLAB_FAISS_NODE_THRESHOLD", DEFAULT_FAISS_NODE_THRESHOLD)
+        for row in rows:
+            if row.get("status") != "ok":
+                continue
+            node_count = row.get("node_count")
+            if isinstance(node_count, int) and node_count >= threshold and row.get("store_backend") != "faiss_local":
+                reasons.append(
+                    f"{row.get('technique')} has {node_count} nodes (>= {threshold}) but ran on backend "
+                    f"'{row.get('store_backend')}', not faiss_local — install faiss-cpu (pip install '.[vector]')"
+                )
     cost_reasons = list(reasons)
     if any(row.get("cost_status") != "estimated" for row in rows if row.get("status") == "ok"):
         cost_reasons.append("cost pricing is unknown")

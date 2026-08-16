@@ -86,3 +86,93 @@ per-query checkpoint, so the run can be resumed (`--resume` on `bench`) instead 
 happened. The guard only ever compares a running total that is entirely `"estimated"` so far — the moment any
 query's cost is `"unknown"`, the guard stops evaluating the cap for the rest of that run, no matter how large the
 partial (necessarily incomplete) total looks.
+
+## Embedding cache
+
+Every embedding call (ingest-time chunk embedding *and* query-time question embedding — `DenseRetriever` embeds
+the question fresh on every `query()` call) is looked up first in a persistent cache keyed by
+`(model, normalized_text)`, backed by sqlite at `.raglab_cache/embeddings.sqlite`
+(`RAGLAB_EMBEDDING_CACHE_DIR` to relocate it). A cache hit never calls the provider and contributes **zero**
+cost/tokens to the usage ledger. Disable with `--no-embedding-cache` (`ingest`/`eval`/`bench`) or
+`RAGLAB_EMBEDDING_CACHE=0`.
+
+Ingest-time hit/miss counts are recorded in the artifact manifest at `extra.embedding_usage` (same shape as
+`provider_usage` — `embedding_cache_hits`, `embedding_cache_misses`, `embedding_calls`, `embedding_cost`, etc.) —
+this is also the first place ingest cost is tracked at all; previously only query-time cost was.
+
+The cache file runs in WAL mode with a 30s busy timeout: under `--concurrency`, every worker thread opens its own
+connection to the same sqlite file, and without this a concurrent writer would occasionally hit
+`sqlite3.OperationalError: database is locked` instead of just waiting its turn.
+
+## FAISS backend selection and claim-eligibility
+
+Dense techniques pick their vector store backend by corpus size: `json_memory` (numpy-vectorized exact cosine
+search) below `RAGLAB_FAISS_NODE_THRESHOLD` (default 2000 nodes) or when `faiss` isn't installed, `faiss_local`
+(exact search via `IndexFlatIP`, just vectorized in C++) above it. Both backends produce **identical rankings** —
+faiss is not approximate here — so this choice only affects speed, never quality.
+
+For a `claim_eligible` suite, silently substituting `json_memory` because `faiss` happens to be missing on this
+machine is a reproducibility problem, not a quality one — a formal benchmark claim must not depend on what's
+installed where it happened to run. `raglab bench --preflight` fails fast if a `claim_eligible` suite is
+requested without `faiss` installed (`pip install '.[vector]'`), and `claim_eligibility()` authoritatively
+rejects any completed run whose actual (post-ingest) node count crossed the threshold but whose manifest records
+a backend other than `faiss_local` — catching the case where the environment silently never engaged faiss.
+`smoke_only`/`exploratory` tiers keep the plain silent fallback.
+
+## Concurrent quality pass and sequential latency pass
+
+`--concurrency N` (`raglab eval`/`raglab bench`, default `1` = fully sequential, unchanged behavior) splits a run
+into two passes once `N > 1`:
+
+- **Latency pass**: the first `--latency-sample-size` (default 5) not-yet-resumed queries run one at a time, with
+  no concurrency — real predictions (never re-run), and the only honest source of per-request `latency_ms_p50/p95`
+  since nothing is contending for resources yet.
+- **Quality pass**: every remaining query runs concurrently across `N` worker threads. Ranking/correctness doesn't
+  depend on wall-clock timing, so concurrent execution is safe there; only *individual* latency becomes
+  untrustworthy under contention, which is exactly why it isn't measured here.
+
+The report gains a `performance` section (only present when `concurrency > 1` — at `concurrency=1` there is one
+pass and `metrics.latency_ms_p50/p95` already covers it):
+
+```json
+"performance": {
+  "latency_pass": {"mode": "sequential", "sampled_queries": 5, "latency_ms_p50": 340.0, "latency_ms_p95": 480.0},
+  "quality_pass": {"mode": "concurrent", "workers": 8, "queries": 45, "elapsed_s": 12.3, "throughput_qps": 3.66}
+}
+```
+
+Concurrency assumes a technique's `pipeline.query()` does not mutate `self` state beyond what's local to that
+call — already an implicit requirement given `--latency-repetitions` already calls `query()` repeatedly and
+expects independent, reproducible results per call; concurrency additionally requires no data races between
+*simultaneous* calls. Checkpoint writes, cost/retry accounting, and the budget guard are all lock-protected and
+concurrency-invariant (same final totals regardless of how many workers ran); predictions are always reassembled
+into dataset order before metrics are computed, regardless of completion order.
+
+This was audited across every bundled technique: `HyDERetriever` and `RAGFusionRetriever` used to write a
+per-call result onto their own `self.last_metadata` and have the pipeline read it back afterward — a real race,
+since a second concurrent query could overwrite it before the first query's read. Fixed (`retrieve()` now returns
+`(results, runtime_metadata)` instead); regression-tested in `tests/test_concurrent_technique_metadata.py` by
+deterministically forcing one query's entire retrieval to complete inside another query's window between
+"retrieval finished" and "runtime metadata read back," rather than relying on incidental thread-scheduling luck.
+Every other bundled retriever/reranker/verifier either holds no per-call mutable state or builds it fresh inside
+`query()` — see `docs/adding_techniques.md` for the rule new techniques must follow.
+
+`metrics.latency_ms_avg/p50/p95` (and every `metrics_by_cutoff` bucket) are substituted with the latency-pass
+sample whenever `concurrency > 1` — the full-dataset aggregate would otherwise silently mix in the quality
+pass's contended timings, and `claim_eligibility()` reads exactly this field. The true per-query latency
+(including the contended ones) is still visible in `query_metrics`/`query_metrics_by_cutoff` for anyone who wants
+to inspect it; only the headline aggregate is replaced.
+
+**Bounded concurrency, not front-loaded**: the quality pass keeps at most `concurrency` futures in flight at
+once, submitting a replacement only as each one completes and only while the budget guard hasn't tripped.
+Submitting the entire remaining dataset to the executor up front would let the guard trip only after however many
+queries happened to complete before the cumulative cost crossed the cap — bounded by cost, not by `concurrency`.
+With the sliding window, once the guard trips no new work is ever dispatched, so at most the (at most
+`concurrency`) queries already in flight at that moment get to finish.
+
+**Protocol identity**: `concurrency` and `latency_sample_size` are part of the checkpoint header (a resume under a
+different value starts a fresh checkpoint rather than mixing predictions whose latency was recorded under a
+different meaning of "trustworthy"), the run metadata's `latency_protocol`, and `--resume`'s report-matching key.
+A `claim_eligible` suite must declare both explicitly (mirroring `warmup_queries`) so every technique in a
+comparison runs under the identical protocol — `latency_sample_size` must be at least 1 whenever
+`concurrency > 1`, or there would be no trustworthy latency source left at all.

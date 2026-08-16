@@ -13,7 +13,9 @@ generation, verification, and evaluation so new research ideas can be added with
 - A benchmark harness that writes per-run reports plus JSON, CSV, and Markdown summaries.
 - A local smoke path that runs without API keys.
 - An OpenAI-compatible research path for embeddings, generation, synthetic QA, and LLM-as-judge metrics.
-- Artifact v3 with canonical config/corpus fingerprints, locked embedding metadata, and vector-store validation.
+- Artifact v4 with canonical config/corpus fingerprints, locked embedding metadata, embeddings stored in a
+  binary `.npy` file (not inline JSON), and vector-store validation — FAISS by default above a configurable
+  node-count threshold, numpy-vectorized exact search below it.
 
 ## Architecture
 

@@ -22,4 +22,4 @@ def test_cli_artifacts_inspect(tmp_path: Path) -> None:
     )
     payload = json.loads(completed.stdout)
     assert payload["node_count"] > 0
-    assert payload["manifest"]["artifact_version"] == "3"
+    assert payload["manifest"]["artifact_version"] == "4"

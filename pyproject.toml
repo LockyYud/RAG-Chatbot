@@ -6,6 +6,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "litellm>=1.86.0",
+    # Artifact v4 stores embeddings in a sibling .npy file (raglab/indexing/artifacts.py)
+    # rather than inline in nodes.json — needed by any dense technique's ingest/load,
+    # not just the optional FAISS backend, so it is a base dependency now.
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
@@ -19,7 +23,6 @@ dev = [
 ]
 research = [
   "datasets>=2.20",
-  "numpy>=1.26",
   "pandas>=2.2",
   "pyarrow>=16",
   "pydantic>=2.7",
@@ -27,7 +30,6 @@ research = [
 ]
 vector = [
   "faiss-cpu>=1.8",
-  "numpy>=1.26",
 ]
 rerank = [
   "sentence-transformers>=3.0",

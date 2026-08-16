@@ -28,10 +28,12 @@ reproduced. A technique must declare each profile it supports.
 
 ## Artifact bundle
 
-Each v3 artifact records the locked technique config, corpus fingerprint,
+Each v4 artifact records the locked technique config, corpus fingerprint,
 pipeline source fingerprint, relevant dependency versions, and checksums of
-every persisted file. A technique may write custom state (tree, graph, token
-index, checkpoint metadata) into its artifact directory before `save_nodes()`;
+every persisted file. Embeddings are stored in a sibling `embeddings.npy`
+(float32, node-order aligned) rather than inline in `nodes.json`. A technique
+may write custom state (tree, graph, token index, checkpoint metadata) into
+its artifact directory before `save_nodes()`;
 the bundle inventory will include and validate it on load.
 
 Use `raglab artifacts inspect` to inspect the manifest. Do not silently load

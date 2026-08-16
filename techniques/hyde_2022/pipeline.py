@@ -34,12 +34,11 @@ import time
 from typing import Any
 
 from raglab.core.base import BasePipeline
-from raglab.core.interfaces import BaseRetriever
 from raglab.core.io import iter_input_files
 from raglab.core.measure import build_ingest_manifest, build_query_metadata, skipped_verification
 from raglab.core.schema import ArtifactManifest, IndexedNode, RAGAnswer, RetrievalResult
 from raglab.core.text import dense_cosine, mean_dense_vector, token_count
-from raglab.indexing.artifacts import load_vector_store, save_nodes
+from raglab.indexing.artifacts import default_store_backend, load_vector_store, save_nodes
 from raglab.indexing.embeddings import Embedder
 from raglab.inference.context_builders.citation_context import CitationContextBuilder
 from raglab.inference.generators.chat import ChatGenerator
@@ -49,13 +48,19 @@ from raglab.processing.chunkers.recursive import RecursiveChunker
 from raglab.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
 from raglab.processing.enrichers.basic import SectionTitleEnricher
 from raglab.processing.parsers.text_parser import TextParser
-from raglab.providers.llm_client import LLMClient, check_provider_ready
+from raglab.providers.llm_client import LLMClient, capture_provider_usage, check_provider_ready
 
 # ─── The novelty ─────────────────────────────────────────────────────────────
 
 
-class HyDERetriever(BaseRetriever):
-    """Generate N hypothetical docs, embed them, mean-pool, then search."""
+class HyDERetriever:
+    """Generate N hypothetical docs, embed them, mean-pool, then search.
+
+    Not a ``BaseRetriever``: its ``retrieve()`` returns ``(results, metadata)``,
+    not a bare list — see that method's docstring for why. Nothing calls this
+    class through the ``BaseRetriever`` abstraction, so the interface mismatch
+    is intentional, not an oversight.
+    """
 
     def __init__(
         self,
@@ -78,9 +83,19 @@ class HyDERetriever(BaseRetriever):
         self.max_tokens = max_tokens
         self.embedder = Embedder(model=embedding_model)
         self.client = LLMClient()
-        self.last_metadata: dict[str, Any] = {}
 
-    def retrieve(self, query: str, top_k: int) -> list[RetrievalResult]:
+    def retrieve(self, query: str, top_k: int) -> tuple[list[RetrievalResult], dict[str, Any]]:
+        """Return (results, runtime_metadata) — not a bare list.
+
+        Deliberately not ``BaseRetriever.retrieve()``'s shape and not stored as
+        ``self.last_metadata``: this retriever calls an LLM before it can even
+        search (``_generate_hypothetical_docs``), a wide window during which a
+        second concurrent ``query()`` call on the same shared, already-loaded
+        pipeline (``raglab eval/bench --concurrency``) could interleave. A
+        write-then-read-back on ``self`` would let one query's runtime
+        metadata get silently attached to a different query's answer. Returning
+        the metadata alongside the results keeps it call-local instead.
+        """
         # Step 1: ask the LLM to imagine `samples` answers to the query.
         hypothetical_docs, gen_meta = self._generate_hypothetical_docs(query)
 
@@ -111,14 +126,14 @@ class HyDERetriever(BaseRetriever):
             for rank, (node, score) in enumerate(ranked, start=1)
         ]
 
-        self.last_metadata = {
+        runtime_metadata = {
             "method": "hyde",
             "generated_texts": hypothetical_docs,
             "embedding_input_count": len(hypothetical_docs),
             "estimated_embedding_tokens": sum(token_count(doc) for doc in hypothetical_docs),
             **gen_meta,
         }
-        return results
+        return results, runtime_metadata
 
     def _generate_hypothetical_docs(self, query: str) -> tuple[list[str], dict[str, Any]]:
         docs: list[str] = []
@@ -233,13 +248,14 @@ class HyDEPipeline(BasePipeline):
 
         chunks = RecursiveChunker(chunk_size=self.chunk_size, overlap=self.chunk_overlap).chunk(blocks)
         nodes = SectionTitleEnricher().enrich(chunks)
-        nodes = Embedder(
-            model=self.embedding_model,
-            batch_size=self.embedding_batch_size,
-        ).embed_nodes(nodes)
+        with capture_provider_usage() as embedding_usage:
+            nodes = Embedder(
+                model=self.embedding_model,
+                batch_size=self.embedding_batch_size,
+            ).embed_nodes(nodes)
 
         embedding_spec = {"type": "dense", "model": self.embedding_model}
-        store_backend = "json_memory"
+        store_backend = default_store_backend(len(nodes), has_embeddings=True)
         manifest = build_ingest_manifest(
             pipeline_id=self.id,
             pipeline_name=self.name,
@@ -252,6 +268,7 @@ class HyDEPipeline(BasePipeline):
             embedding_spec=embedding_spec,
             store_backend=store_backend,
         )
+        manifest["extra"]["embedding_usage"] = embedding_usage.to_dict()
         save_nodes(output_path, nodes, manifest, store_spec={"type": store_backend})
         return manifest
 
@@ -260,8 +277,10 @@ class HyDEPipeline(BasePipeline):
         check_provider_ready(self.generator_model)
         manifest, nodes = self.load_artifact(artifact_path)
         _ = load_vector_store(artifact_path, nodes)  # warm the store; HyDE searches nodes directly
-        # Built once: the LLM+embedder handles inside are stateless per call,
-        # only ``last_metadata`` is written then read within one query().
+        # Built once: everything on self is fixed at construction (nodes,
+        # embedder, client) and retrieve() returns its per-call runtime
+        # metadata instead of stashing it on self — safe to share across
+        # concurrent query() calls (raglab eval/bench --concurrency).
         self._retriever = HyDERetriever(
             nodes=nodes,
             embedding_model=self.embedding_model,
@@ -282,7 +301,7 @@ class HyDEPipeline(BasePipeline):
 
         # === The HyDE step replaces the standard dense retriever ===
         retriever = self._retriever
-        retrieved = retriever.retrieve(question, self.top_k)
+        retrieved, retrieval_runtime = retriever.retrieve(question, self.top_k)
         # ===========================================================
 
         reranked = NoReranker().rerank(question, retrieved, self.top_k)
@@ -310,7 +329,7 @@ class HyDEPipeline(BasePipeline):
                 context=context,
                 verification=verification,
                 artifact_manifest=manifest,
-                retrieval_runtime=retriever.last_metadata,
+                retrieval_runtime=retrieval_runtime,
                 retriever_kind="hyde",
                 question=question,
                 answer_metadata=dict(answer.metadata),

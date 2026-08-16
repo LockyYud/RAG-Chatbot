@@ -2,16 +2,65 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import importlib.util
 import inspect
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from raglab.core.io import read_json, write_json
-from raglab.core.measure import canonical_fingerprint
+from raglab.core.measure import ARTIFACT_VERSION, canonical_fingerprint
 from raglab.core.schema import ArtifactManifest, IndexedNode, JSONValue
 from raglab.indexing.vector_stores import create_vector_store
+from raglab.providers.env import env_int
 
-ARTIFACT_VERSION = "3"
+EMBEDDINGS_FILE = "embeddings.npy"
+
+# Below this many nodes, FAISS's C++ vectorized exact search isn't worth the
+# extra artifact complexity over the plain numpy-vectorized json_memory path;
+# above it, the same exact-search recall gets meaningfully faster. Tunable
+# without a code change since the "right" corpus size varies per deployment.
+DEFAULT_FAISS_NODE_THRESHOLD = 2000
+
+
+def default_store_backend(node_count: int, *, has_embeddings: bool) -> str | None:
+    """Pick the vector store backend a technique's ``ingest()`` should request.
+
+    Returns ``None`` for sparse-only techniques (no embeddings to index at
+    all — matches every BM25-only technique's existing behavior). Otherwise
+    ``"faiss_local"`` once the corpus is large enough that vectorized C++
+    search meaningfully beats numpy, unless faiss isn't installed (it is an
+    optional dependency — see the ``vector`` extra), in which case this
+    degrades to ``"json_memory"`` instead of failing.
+    """
+    if not has_embeddings:
+        return None
+    threshold = env_int("RAGLAB_FAISS_NODE_THRESHOLD", DEFAULT_FAISS_NODE_THRESHOLD)
+    if node_count >= threshold and importlib.util.find_spec("faiss") is not None:
+        return "faiss_local"
+    return "json_memory"
+
+
+_SIDECAR_FILES = (EMBEDDINGS_FILE, "vector_store.json", "faiss.index")
+
+
+def _clear_stale_sidecars(target: Path) -> None:
+    """Remove every sidecar this or a prior save_nodes() call could have written.
+
+    A technique may reuse an output directory across ingests with a different
+    embedding/backend config (sparse this time, dense last time; json_memory
+    this time, faiss_local last time). Without this, a leftover
+    ``embeddings.npy`` from a previous dense run would get silently reattached
+    by ``load_nodes()`` to nodes that were never actually embedded this run,
+    and a leftover ``faiss.index``/``vector_store.json`` from a different
+    backend would sit in the artifact directory unused but still checksummed
+    as though intentional.
+    """
+    for name in _SIDECAR_FILES:
+        path = target / name
+        if path.exists():
+            path.unlink()
 
 
 def save_nodes(
@@ -23,7 +72,9 @@ def save_nodes(
     validate_manifest(manifest, nodes)
     target = Path(path)
     target.mkdir(parents=True, exist_ok=True)
-    write_json(target / "nodes.json", [node.to_dict() for node in nodes])
+    _clear_stale_sidecars(target)
+    write_json(target / "nodes.json", [_node_row_without_embedding(node) for node in nodes])
+    _save_embeddings(target, nodes, manifest)
     if store_spec is not None:
         store = create_vector_store(store_spec)
         if store is not None:
@@ -33,8 +84,44 @@ def save_nodes(
     write_json(target / "index_manifest.json", manifest)
 
 
+def _node_row_without_embedding(node: IndexedNode) -> dict[str, Any]:
+    row = node.to_dict()
+    row.pop("embedding", None)
+    return row
+
+
+def _save_embeddings(target: Path, nodes: list[IndexedNode], manifest: ArtifactManifest) -> None:
+    """Persist embeddings as one binary ``.npy`` array instead of inline JSON floats.
+
+    All-or-nothing: ``validate_manifest()`` (called earlier in ``save_nodes()``)
+    already rejects a partially-embedded node list via ``embedding.model`` vs.
+    per-node embedding presence, so by the time this runs every node either has
+    an embedding or none do — a partial set would make the node-order-aligned
+    array ambiguous.
+    """
+    store = manifest.setdefault("store", {})
+    embedded = [node for node in nodes if node.embedding is not None]
+    if not embedded:
+        store["embeddings_path"] = None
+        store["embeddings_dtype"] = None
+        return
+    array = np.array([node.embedding for node in nodes], dtype="float32")
+    np.save(target / EMBEDDINGS_FILE, array)
+    store["embeddings_path"] = EMBEDDINGS_FILE
+    store["embeddings_dtype"] = "float32"
+
+
 def load_nodes(path: str | Path) -> list[IndexedNode]:
     rows = read_json(Path(path) / "nodes.json")
+    embeddings_path = Path(path) / EMBEDDINGS_FILE
+    # mmap avoids buffering the whole array through a plain Python read before
+    # numpy ever sees it; more importantly at this project's scale, it replaces
+    # slow per-float JSON parsing with numpy's binary loader entirely.
+    embeddings = np.load(embeddings_path, mmap_mode="r") if embeddings_path.exists() else None
+    if embeddings is not None and len(embeddings) != len(rows):
+        raise RuntimeError(
+            f"Artifact embeddings.npy has {len(embeddings)} row(s) but nodes.json has {len(rows)}; artifact is corrupt."
+        )
     return [
         IndexedNode(
             node_id=row["node_id"],
@@ -42,10 +129,10 @@ def load_nodes(path: str | Path) -> list[IndexedNode]:
             doc_id=row["doc_id"],
             text_for_embedding=row["text_for_embedding"],
             text_for_generation=row["text_for_generation"],
-            embedding=row.get("embedding"),
+            embedding=embeddings[index].tolist() if embeddings is not None else None,
             metadata=dict(row.get("metadata", {})),
         )
-        for row in rows
+        for index, row in enumerate(rows)
     ]
 
 
@@ -55,8 +142,8 @@ def load_manifest(path: str | Path) -> ArtifactManifest:
         raise RuntimeError(f"Artifact is missing required manifest: {manifest_path}")
     manifest = dict(read_json(manifest_path))
     version = str(manifest.get("artifact_version", ""))
-    if version == "2":
-        raise RuntimeError("Artifact v2 không được hỗ trợ trong v0.2; hãy chạy ingest lại.")
+    if version in {"2", "3"}:
+        raise RuntimeError(f"Artifact v{version} không được hỗ trợ trong v0.2+; hãy chạy ingest lại.")
     if version != ARTIFACT_VERSION:
         raise RuntimeError(
             f"Unsupported artifact version {version or '<missing>'}; expected {ARTIFACT_VERSION}. Re-run ingest."
@@ -87,18 +174,18 @@ def validate_manifest(
     required = {"pipeline", "embedding", "store", "corpus", "runtime"}
     missing = sorted(required - set(manifest))
     if missing:
-        raise RuntimeError(f"Artifact v3 manifest is missing fields: {', '.join(missing)}")
+        raise RuntimeError(f"Artifact v4 manifest is missing fields: {', '.join(missing)}")
 
     pipeline_id = str(manifest["pipeline"].get("id", ""))
     if not pipeline_id:
-        raise RuntimeError("Artifact v3 manifest is missing pipeline.id")
+        raise RuntimeError("Artifact v4 manifest is missing pipeline.id")
     if expected_pipeline_id is not None and pipeline_id != expected_pipeline_id:
         raise RuntimeError(
             f"Artifact belongs to pipeline '{pipeline_id}', not requested pipeline '{expected_pipeline_id}'."
         )
     config = manifest["pipeline"].get("config")
     if not isinstance(config, dict):
-        raise RuntimeError("Artifact v3 manifest is missing pipeline.config")
+        raise RuntimeError("Artifact v4 manifest is missing pipeline.config")
     expected_config_fingerprint = canonical_fingerprint({"id": pipeline_id, "config": config})
     if manifest["pipeline"].get("config_fingerprint") != expected_config_fingerprint:
         raise RuntimeError("Artifact pipeline config fingerprint is missing or invalid")
@@ -201,7 +288,7 @@ def _artifact_file_hashes(target: Path) -> dict[str, JSONValue]:
 def _validate_artifact_files(target: Path, manifest: ArtifactManifest) -> None:
     recorded = manifest.get("extra", {}).get("artifact_files")
     if not isinstance(recorded, dict):
-        raise RuntimeError("Artifact v3 manifest is missing extra.artifact_files")
+        raise RuntimeError("Artifact v4 manifest is missing extra.artifact_files")
     observed = _artifact_file_hashes(target)
     if recorded != observed:
         raise RuntimeError("Artifact file inventory or checksum does not match manifest")

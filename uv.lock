@@ -2199,6 +2199,7 @@ version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "litellm" },
+    { name = "numpy" },
 ]
 
 [package.optional-dependencies]
@@ -2215,7 +2216,6 @@ rerank = [
 ]
 research = [
     { name = "datasets" },
-    { name = "numpy" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pydantic" },
@@ -2223,7 +2223,6 @@ research = [
 ]
 vector = [
     { name = "faiss-cpu" },
-    { name = "numpy" },
 ]
 
 [package.metadata]
@@ -2233,8 +2232,7 @@ requires-dist = [
     { name = "faiss-cpu", marker = "extra == 'vector'", specifier = ">=1.8" },
     { name = "litellm", specifier = ">=1.86.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
-    { name = "numpy", marker = "extra == 'research'", specifier = ">=1.26" },
-    { name = "numpy", marker = "extra == 'vector'", specifier = ">=1.26" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", marker = "extra == 'research'", specifier = ">=2.2" },
     { name = "pyarrow", marker = "extra == 'research'", specifier = ">=16" },
     { name = "pydantic", marker = "extra == 'research'", specifier = ">=2.7" },

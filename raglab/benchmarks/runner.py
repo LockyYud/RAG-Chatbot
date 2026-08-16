@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
 import json
 import random
 import time
@@ -35,6 +36,8 @@ def run_benchmarks(
     warmup_queries: int | None = None,
     latency_repetitions: int = 1,
     max_estimated_cost_usd: float | None = None,
+    concurrency: int | None = None,
+    latency_sample_size: int | None = None,
 ) -> dict[str, Any]:
     if top_k is not None and top_k < 1:
         raise ValueError("top_k must be at least 1")
@@ -42,15 +45,29 @@ def run_benchmarks(
         raise ValueError("docs and qa are required unless --suite supplies them")
     suite = load_suite(suite_path) if suite_path else None
     if suite:
-        # ``warmup_queries=None`` means "the caller did not explicitly ask for
-        # a value" — only a value the caller actually passed can conflict
-        # with a suite-locked warmup_queries. Otherwise a claim-eligible
-        # suite's lock would reject its own CLI default every time.
-        resolved = resolve_suite(suite, docs=docs, qa=qa, mode=mode, top_k=top_k, warmup_queries=warmup_queries)
+        # ``warmup_queries=None``/``concurrency=None``/``latency_sample_size=None``
+        # mean "the caller did not explicitly ask for a value" — only a value
+        # the caller actually passed can conflict with a suite lock. Otherwise
+        # a claim-eligible suite's lock would reject its own CLI default every
+        # time.
+        resolved = resolve_suite(
+            suite,
+            docs=docs,
+            qa=qa,
+            mode=mode,
+            top_k=top_k,
+            warmup_queries=warmup_queries,
+            concurrency=concurrency,
+            latency_sample_size=latency_sample_size,
+        )
         docs, qa = str(resolved["docs"]), str(resolved["qa"])
         mode, top_k = str(resolved["mode"]), int(resolved["top_k"])
         if "warmup_queries" in resolved:
             warmup_queries = int(resolved["warmup_queries"])
+        if "concurrency" in resolved:
+            concurrency = int(resolved["concurrency"])
+        if "latency_sample_size" in resolved:
+            latency_sample_size = int(resolved["latency_sample_size"])
         profile = str(suite.get("profile", profile))
         missing = sorted(set(suite["required_baselines"]) - set(technique_ids))
         if missing:
@@ -58,6 +75,8 @@ def run_benchmarks(
     mode = mode or "full_rag"
     top_k = top_k or 5
     warmup_queries = warmup_queries if warmup_queries is not None else 0
+    concurrency = concurrency if concurrency is not None else 1
+    latency_sample_size = latency_sample_size if latency_sample_size is not None else 5
     cutoffs = list(suite.get("cutoffs", [top_k])) if suite else [top_k]
     bootstrap_samples = int(suite.get("bootstrap_samples", 10_000)) if suite else 10_000
     output_dir = Path(output)
@@ -85,6 +104,8 @@ def run_benchmarks(
                     judge_enabled=judge_spec is not None,
                     warmup_queries=warmup_queries,
                     latency_repetitions=latency_repetitions,
+                    concurrency=concurrency,
+                    latency_sample_size=latency_sample_size,
                 )
                 if resume and manifest
                 else None
@@ -122,6 +143,8 @@ def run_benchmarks(
                     warmup_queries=warmup_queries,
                     latency_repetitions=latency_repetitions,
                     max_estimated_cost_usd=max_estimated_cost_usd,
+                    concurrency=concurrency,
+                    latency_sample_size=latency_sample_size,
                 )
                 evaluation["index"] = {
                     "build_time_ms": index_time_ms,
@@ -176,6 +199,8 @@ def run_preflight(
     top_k: int | None = None,
     suite_path: str | None = None,
     warmup_queries: int | None = None,
+    concurrency: int | None = None,
+    latency_sample_size: int | None = None,
 ) -> dict[str, Any]:
     """Check everything that can fail *before* spending an ingest/query/API call.
 
@@ -192,16 +217,41 @@ def run_preflight(
     suite = load_suite(suite_path) if suite_path else None
     if suite:
         try:
-            resolved = resolve_suite(suite, docs=docs, qa=qa, mode=mode, top_k=top_k, warmup_queries=warmup_queries)
+            resolved = resolve_suite(
+                suite,
+                docs=docs,
+                qa=qa,
+                mode=mode,
+                top_k=top_k,
+                warmup_queries=warmup_queries,
+                concurrency=concurrency,
+                latency_sample_size=latency_sample_size,
+            )
             docs, qa = str(resolved["docs"]), str(resolved["qa"])
             mode = str(resolved["mode"])
             if "warmup_queries" in resolved:
                 warmup_queries = int(resolved["warmup_queries"])
+            if "concurrency" in resolved:
+                concurrency = int(resolved["concurrency"])
+            if "latency_sample_size" in resolved:
+                latency_sample_size = int(resolved["latency_sample_size"])
         except ValueError as exc:
             reasons.append(str(exc))
         missing = sorted(set(suite.get("required_baselines", [])) - set(technique_ids))
         if missing:
             reasons.append(f"suite requires techniques not in --techniques: {', '.join(missing)}")
+        if suite.get("tier") == "claim_eligible" and importlib.util.find_spec("faiss") is None:
+            # FaissLocalVectorStore is exact search (IndexFlatIP), not approximate —
+            # a silent json_memory fallback would not change any ranking, only
+            # speed. But a claim-eligible run must not have its backend chosen by
+            # what happens to be installed on this machine: if the corpus crosses
+            # RAGLAB_FAISS_NODE_THRESHOLD after chunking, this environment would
+            # silently run json_memory and fail claim_eligibility() after the
+            # fact. Catch that here, in seconds, instead of after a full run.
+            reasons.append(
+                "claim_eligible suite requires faiss installed (pip install '.[vector]') in case the corpus "
+                "crosses RAGLAB_FAISS_NODE_THRESHOLD after chunking"
+            )
     mode = mode or "full_rag"
 
     if is_git_dirty():
@@ -267,12 +317,15 @@ def _matching_report(
     judge_enabled: bool = False,
     warmup_queries: int = 0,
     latency_repetitions: int = 1,
+    concurrency: int = 1,
+    latency_sample_size: int = 5,
 ) -> Path | None:
     if manifest is None:
         return None
     for candidate in sorted(output_dir.glob(f"{technique_id}_*_eval.json"), reverse=True):
         report = json.loads(candidate.read_text(encoding="utf-8"))
         metadata = report.get("run_metadata", {})
+        latency_protocol = metadata.get("latency_protocol", {})
         if (
             report.get("report_schema_version") == "2"
             and metadata.get("artifact_fingerprint") == manifest["corpus"]["fingerprint"]
@@ -284,8 +337,14 @@ def _matching_report(
             and (seed is None or metadata.get("seed") == seed)
             and (suite_fingerprint is None or metadata.get("suite", {}).get("fingerprint") == suite_fingerprint)
             and metadata.get("judge_enabled", False) == judge_enabled
-            and metadata.get("latency_protocol", {}).get("warmup_queries", 0) == warmup_queries
-            and metadata.get("latency_protocol", {}).get("repetitions_per_query", 1) == latency_repetitions
+            and latency_protocol.get("warmup_queries", 0) == warmup_queries
+            and latency_protocol.get("repetitions_per_query", 1) == latency_repetitions
+            # A report produced under a different concurrency/latency-sample
+            # protocol isn't reusable: its latency_ms_p95 (and, for a resumed
+            # run, which predictions counted as the trustworthy sequential
+            # sample) was computed under a different meaning of "trustworthy."
+            and latency_protocol.get("concurrency", 1) == concurrency
+            and latency_protocol.get("latency_sample_size", 5) == latency_sample_size
         ):
             return candidate
     return None
@@ -341,6 +400,7 @@ def _row(
         "index_size_bytes": evaluation.get("index", {}).get(
             "size_bytes", sum(path.stat().st_size for path in artifact.rglob("*") if path.is_file())
         ),
+        "store_backend": manifest["store"].get("backend"),
         "cost_status": "estimated" if cost_statuses == {"estimated"} else "unknown",
         **evaluation.get("metrics", {}),
         **flattened_cutoffs,

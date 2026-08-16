@@ -3,21 +3,33 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from raglab.core.interfaces import BaseVectorStore
 from raglab.core.io import read_json, write_json
 from raglab.core.schema import IndexedNode
-from raglab.core.text import dense_cosine
 
 
 class JsonMemoryVectorStore(BaseVectorStore):
+    """Exact cosine search over every node's embedding, vectorized with numpy.
+
+    Same ranking as a naive per-node Python cosine loop — verified equal in
+    ``tests/test_artifacts_vector_store.py`` — just computed as one matrix
+    multiply instead of N Python-level function calls. This is the fallback
+    used below the FAISS node-count threshold (or when faiss isn't
+    installed), not an approximation: latency changes, results do not.
+    """
+
     backend = "json_memory"
 
     def __init__(self, **_: Any) -> None:
         self.nodes: list[IndexedNode] = []
+        self._matrix: np.ndarray | None = None
 
     def build(self, nodes: list[IndexedNode]) -> None:
         _require_embeddings(nodes, self.backend)
         self.nodes = list(nodes)
+        self._matrix = _normalized_matrix(self.nodes)
 
     def save(self, path: str | Path) -> None:
         target = Path(path)
@@ -33,10 +45,33 @@ class JsonMemoryVectorStore(BaseVectorStore):
             read_json(metadata_path)
         _require_embeddings(nodes, self.backend)
         self.nodes = list(nodes)
+        self._matrix = _normalized_matrix(self.nodes)
 
     def search(self, query_embedding: list[float], top_k: int) -> list[tuple[IndexedNode, float]]:
-        scored = [(node, dense_cosine(query_embedding, node.embedding or [])) for node in self.nodes]
-        return sorted(scored, key=lambda item: item[1], reverse=True)[:top_k]
+        if self._matrix is None or not len(self.nodes):
+            return []
+        query = np.asarray(query_embedding, dtype="float32")
+        query_norm = np.linalg.norm(query)
+        if query_norm > 0:
+            query = query / query_norm
+        scores = self._matrix @ query
+        k = min(top_k, len(self.nodes))
+        # kind="stable" is required for correctness, not just style: on a tie
+        # (e.g. an all-zero query against any corpus, or duplicate embeddings)
+        # an unstable partition/sort may pick an arbitrary subset of the tied
+        # nodes into the top-k, and in a different order run to run. A stable
+        # sort matches the old per-node Python `sorted(..., reverse=True)`
+        # exactly — ties keep their original node order — so ranking is
+        # identical to before, not just "usually the same."
+        order = np.argsort(-scores, kind="stable")[:k]
+        return [(self.nodes[index], float(scores[index])) for index in order]
+
+
+def _normalized_matrix(nodes: list[IndexedNode]) -> np.ndarray:
+    matrix = np.array([node.embedding for node in nodes], dtype="float32")
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0  # a zero vector's direction is undefined; leave it as all-zero rather than divide by 0
+    return matrix / norms
 
 
 class FaissLocalVectorStore(BaseVectorStore):

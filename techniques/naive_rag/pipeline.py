@@ -29,7 +29,7 @@ from raglab.core.base import BasePipeline
 from raglab.core.io import iter_input_files
 from raglab.core.measure import build_ingest_manifest, build_query_metadata, skipped_verification
 from raglab.core.schema import ArtifactManifest, RAGAnswer
-from raglab.indexing.artifacts import save_nodes
+from raglab.indexing.artifacts import default_store_backend, load_vector_store, save_nodes
 from raglab.indexing.embeddings import Embedder
 from raglab.indexing.retrievers import DenseRetriever
 from raglab.inference.context_builders.citation_context import CitationContextBuilder
@@ -40,6 +40,7 @@ from raglab.processing.chunkers.fixed_size import FixedSizeChunker
 from raglab.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
 from raglab.processing.enrichers.basic import NoEnricher
 from raglab.processing.parsers.text_parser import TextParser
+from raglab.providers.llm_client import capture_provider_usage
 
 
 class NaiveRAGPipeline(BasePipeline):
@@ -107,10 +108,17 @@ class NaiveRAGPipeline(BasePipeline):
         nodes = NoEnricher().enrich(chunks)
 
         # 5. Embed: call OpenAI once per node and store vectors in each node.
+        #    Wrapped in capture_provider_usage() purely to surface embedding
+        #    cache hit/miss counts in the manifest — ingest cost wasn't
+        #    tracked anywhere before this.
         embedder = Embedder(model=self.embedding_model, batch_size=self.embedding_batch_size)
-        nodes = embedder.embed_nodes(nodes)
+        with capture_provider_usage() as embedding_usage:
+            nodes = embedder.embed_nodes(nodes)
 
-        # 6. Persist nodes (with embeddings) and the manifest.
+        # 6. Persist nodes (with embeddings) and the manifest. Backend picked by
+        #    corpus size: json_memory (vectorized numpy) below the FAISS
+        #    threshold, faiss_local above it — see default_store_backend().
+        store_backend = default_store_backend(len(nodes), has_embeddings=True)
         manifest = build_ingest_manifest(
             pipeline_id=self.id,
             pipeline_name=self.name,
@@ -121,8 +129,10 @@ class NaiveRAGPipeline(BasePipeline):
             pipeline_config=self.resolved_config(),
             implementation_level=self.implementation_level,
             embedding_spec={"type": "openai", "model": embedder.model},
+            store_backend=store_backend,
         )
-        save_nodes(output_path, nodes, manifest)
+        manifest["extra"]["embedding_usage"] = embedding_usage.to_dict()
+        save_nodes(output_path, nodes, manifest, store_spec={"type": store_backend})
         return manifest
 
     # ─── Load / Query ────────────────────────────────────────────────────────
@@ -134,7 +144,8 @@ class NaiveRAGPipeline(BasePipeline):
         manifest, nodes = self.load_artifact(artifact_path)
         # Built once here (not per query): avoids re-reading nodes.json and
         # re-constructing the retriever for every question in an eval run.
-        self._retriever = DenseRetriever(nodes=nodes, embedding_model=self.embedding_model)
+        vector_store = load_vector_store(artifact_path, nodes)
+        self._retriever = DenseRetriever(nodes=nodes, vector_store=vector_store, embedding_model=self.embedding_model)
         self._mark_loaded(artifact_path, manifest, nodes)
 
     def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:

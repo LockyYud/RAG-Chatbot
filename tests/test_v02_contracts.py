@@ -34,7 +34,7 @@ def test_artifact_config_is_source_of_truth(tmp_path: Path) -> None:
     assert pipeline is not None
     manifest = pipeline.ingest("datasets/sample/docs", str(artifact))
 
-    assert manifest["artifact_version"] == "3"
+    assert manifest["artifact_version"] == "4"
     assert manifest["pipeline"]["config"]["child_size"] == 77
     assert manifest["pipeline"]["config_fingerprint"].startswith("sha256:")
 

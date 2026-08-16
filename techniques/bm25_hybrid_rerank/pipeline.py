@@ -42,7 +42,7 @@ from raglab.core.base import BasePipeline
 from raglab.core.io import iter_input_files
 from raglab.core.measure import build_ingest_manifest, build_query_metadata, skipped_verification
 from raglab.core.schema import ArtifactManifest, RAGAnswer
-from raglab.indexing.artifacts import load_vector_store, save_nodes
+from raglab.indexing.artifacts import default_store_backend, load_vector_store, save_nodes
 from raglab.indexing.embeddings import Embedder
 from raglab.indexing.retrievers import RRFHybridRetriever
 from raglab.inference.context_builders.citation_context import CitationContextBuilder
@@ -53,6 +53,7 @@ from raglab.processing.chunkers.recursive import RecursiveChunker
 from raglab.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
 from raglab.processing.enrichers.basic import SectionTitleEnricher
 from raglab.processing.parsers.text_parser import TextParser
+from raglab.providers.llm_client import capture_provider_usage
 
 
 class BM25HybridRerankPipeline(BasePipeline):
@@ -136,13 +137,14 @@ class BM25HybridRerankPipeline(BasePipeline):
         nodes = SectionTitleEnricher().enrich(chunks)
 
         # Dense half of the hybrid needs vectors saved at ingest.
-        nodes = Embedder(
-            model=self.embedding_model,
-            batch_size=self.embedding_batch_size,
-        ).embed_nodes(nodes)
+        with capture_provider_usage() as embedding_usage:
+            nodes = Embedder(
+                model=self.embedding_model,
+                batch_size=self.embedding_batch_size,
+            ).embed_nodes(nodes)
 
         embedding_spec = {"type": "dense", "model": self.embedding_model}
-        store_backend = "json_memory"
+        store_backend = default_store_backend(len(nodes), has_embeddings=True)
         manifest = build_ingest_manifest(
             pipeline_id=self.id,
             pipeline_name=self.name,
@@ -155,6 +157,7 @@ class BM25HybridRerankPipeline(BasePipeline):
             embedding_spec=embedding_spec,
             store_backend=store_backend,
         )
+        manifest["extra"]["embedding_usage"] = embedding_usage.to_dict()
         save_nodes(output_path, nodes, manifest, store_spec={"type": store_backend})
         return manifest
 

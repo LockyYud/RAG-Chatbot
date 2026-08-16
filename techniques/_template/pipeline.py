@@ -112,8 +112,9 @@ class TemplatePipeline(BasePipeline):
             nodes=nodes,
             pipeline_config=self.resolved_config(),
             implementation_level=self.implementation_level,
-            # TODO: pass embedding_spec=... + store_backend=... if your paper
-            #       uses learned embeddings (see rag_sequence_2020 / hyde_2022).
+            # TODO: pass embedding_spec=... + store_backend=default_store_backend(len(nodes), has_embeddings=True)
+            #       if your paper uses learned embeddings (see rag_sequence_2020 / hyde_2022), and pass
+            #       store_spec={"type": store_backend} to save_nodes() below.
         )
         save_nodes(output_path, nodes, manifest)
         return manifest

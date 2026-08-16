@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 from raglab.core.text import token_count
+from raglab.providers.embedding_cache import get_embedding_cache
 from raglab.providers.env import env_float, load_dotenv
 
 # ─── Defaults (readable from env, overridable per pipeline) ──────────────────
@@ -226,6 +227,8 @@ class ProviderUsageLedger:
     embedding_pricing_configured: bool = False
     chat_pricing_configured: bool = False
     retries: int = 0
+    embedding_cache_hits: int = 0
+    embedding_cache_misses: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         embedding_priced = self.embedding_calls == 0 or self.embedding_pricing_configured
@@ -239,6 +242,8 @@ class ProviderUsageLedger:
             "chat_cost": round(self.chat_cost, 8),
             "estimated_cost": round(self.embedding_cost + self.chat_cost, 8),
             "retries": self.retries,
+            "embedding_cache_hits": self.embedding_cache_hits,
+            "embedding_cache_misses": self.embedding_cache_misses,
             "cost_status": "estimated" if embedding_priced and chat_priced else "unknown",
         }
 
@@ -272,21 +277,48 @@ class LLMClient:
     # ── Embeddings ───────────────────────────────────────────────────────────
 
     def create_embeddings(self, model: str, inputs: list[str], batch_size: int = 64) -> list[list[float]]:
-        """Return one float vector per input string.
+        """Return one float vector per input string, in the same order as *inputs*.
 
-        Batches the inputs to stay within provider limits.
+        Checks the persistent embedding cache (``raglab.providers.embedding_cache``)
+        first; only cache misses are batched into real provider calls (respecting
+        *batch_size* among the misses), so a cache hit contributes zero cost/tokens
+        to the usage ledger — no API call happened for it.
         """
-        vectors: list[list[float]] = []
+        cache = get_embedding_cache()
+        vectors: list[list[float] | None] = [None] * len(inputs)
+        miss_indices: list[int] = []
+        miss_texts: list[str] = []
+        if cache is not None:
+            for index, text in enumerate(inputs):
+                cached = cache.get(model, text)
+                if cached is not None:
+                    vectors[index] = cached
+                else:
+                    miss_indices.append(index)
+                    miss_texts.append(text)
+        else:
+            miss_indices = list(range(len(inputs)))
+            miss_texts = list(inputs)
+
+        ledger = _ACTIVE_LEDGER.get()
+        if ledger is not None:
+            ledger.embedding_cache_hits += len(inputs) - len(miss_texts)
+            ledger.embedding_cache_misses += len(miss_texts)
+
         litellm = _litellm()
-        for start in range(0, len(inputs), batch_size):
-            batch = inputs[start : start + batch_size]
+        for start in range(0, len(miss_texts), batch_size):
+            batch_indices = miss_indices[start : start + batch_size]
+            batch = miss_texts[start : start + batch_size]
             response, retries = _call_with_retry(
                 functools.partial(litellm.embedding, model=model, input=batch, timeout=self.timeout)
             )
             # litellm returns EmbeddingResponse; .data is a list of Embedding objects
             sorted_items = sorted(response.data, key=lambda item: item["index"])
-            vectors.extend(item["embedding"] for item in sorted_items)
-            ledger = _ACTIVE_LEDGER.get()
+            batch_vectors = [item["embedding"] for item in sorted_items]
+            for index, vector in zip(batch_indices, batch_vectors, strict=True):
+                vectors[index] = vector
+                if cache is not None:
+                    cache.put(model, inputs[index], vector)
             if ledger is not None:
                 tokens = sum(token_count(text) for text in batch)
                 rate = env_float("LLM_EMBEDDING_INPUT_COST_PER_1K", 0.0)
@@ -297,7 +329,10 @@ class LLMClient:
                     "LLM_EMBEDDING_INPUT_COST_PER_1K"
                 )
                 ledger.retries += retries
-        return vectors
+        if cache is not None:
+            cache.close()
+        assert all(vector is not None for vector in vectors)
+        return vectors  # type: ignore[return-value]
 
     # ── Chat completions ─────────────────────────────────────────────────────
 

@@ -15,5 +15,7 @@
   "reference_baseline": "bm25_hybrid_rerank",
   "bootstrap_samples": 10000,
   "primary_metrics": ["ndcg_at_10", "recall_at_10", "mrr"],
-  "warmup_queries": 1
+  "warmup_queries": 1,
+  "concurrency": 1,
+  "latency_sample_size": 5
 }

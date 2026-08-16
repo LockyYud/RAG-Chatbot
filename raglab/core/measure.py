@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     )
 
 
-ARTIFACT_VERSION = "3"
+ARTIFACT_VERSION = "4"
 
 
 def build_ingest_manifest(

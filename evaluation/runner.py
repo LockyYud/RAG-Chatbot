@@ -7,12 +7,14 @@ import platform
 import statistics
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from evaluation.judge import create_judge
-from evaluation.metrics import evaluate_prediction_rows, evaluate_predictions
+from evaluation.metrics import _percentile, evaluate_prediction_rows, evaluate_predictions
 from evaluation.profiles import resolve_profile, validate_profile
 from raglab import __version__
 from raglab.core.base import get_pipeline_spec
@@ -53,11 +55,17 @@ def run_eval(
     warmup_queries: int = 0,
     latency_repetitions: int = 1,
     max_estimated_cost_usd: float | None = None,
+    concurrency: int = 1,
+    latency_sample_size: int = 5,
 ) -> dict:
     if top_k < 1:
         raise ValueError("top_k must be at least 1")
     if warmup_queries < 0 or latency_repetitions < 1:
         raise ValueError("warmup_queries must be non-negative and latency_repetitions at least 1")
+    if concurrency < 1:
+        raise ValueError("concurrency must be at least 1")
+    if latency_sample_size < 0:
+        raise ValueError("latency_sample_size must be non-negative")
     # Evaluation is always strict, even when the artifact was created by an
     # interactive demo that opted into component fallback.
     if hasattr(pipeline, "allow_fallback"):
@@ -108,6 +116,8 @@ def run_eval(
         judge_enabled=judge is not None,
         warmup_queries=warmup_queries,
         latency_repetitions=latency_repetitions,
+        concurrency=concurrency,
+        latency_sample_size=latency_sample_size,
     )
     resumed, checkpoint_handle = _open_checkpoint(checkpoint_path, header)
     if resumed:
@@ -115,13 +125,18 @@ def run_eval(
             f"[{pipeline.id}] resuming {len(resumed)}/{len(items)} already-completed queries from {checkpoint_path}",
             file=sys.stderr,
         )
+    predictions_by_id: dict[str, RAGAnswer] = {}
+    sequential_latencies_ms: list[float] = []
+    quality_pass_count = 0
+    quality_pass_elapsed = 0.0
+    budget_error: BudgetExceededError | None = None
     try:
         for item in items[:warmup_queries]:
             # Explicit warm-ups prevent initialization latency from contaminating
             # scored requests. They are excluded from all metrics and costs.
             with capture_provider_usage():
                 pipeline.query(item.question, mode=mode)
-        predictions: list[RAGAnswer] = []
+
         started_run = time.perf_counter()
         retries_total = 0
         pipeline_cost_total = 0.0
@@ -131,60 +146,152 @@ def run_eval(
         # (e.g. embeddings) alongside an unpriced one (e.g. chat) still yields
         # a positive-but-incomplete total — that must not trip the guard.
         cost_trustworthy_so_far = True
-        for index, item in enumerate(items, start=1):
-            if item.question_id in resumed:
-                prediction = resumed[item.question_id]
-            else:
-                prediction = _run_single_query(
-                    pipeline, item, mode=mode, latency_repetitions=latency_repetitions, judge=judge
-                )
-                _append_checkpoint_line(
-                    checkpoint_handle,
-                    {"type": "prediction", "question_id": item.question_id, "prediction": prediction.to_dict()},
-                )
-            predictions.append(prediction)
-            retries_total += int(prediction.metadata.get("provider_usage", {}).get("retries", 0))
-            pipeline_cost = prediction.metadata.get("cost_estimate", {})
-            pipeline_cost_total += float(pipeline_cost.get("amount", 0.0))
-            if pipeline_cost.get("status") != "estimated":
-                cost_trustworthy_so_far = False
-            if judge is not None:
-                judge_cost = prediction.metadata.get("evaluation_cost_estimate", {})
-                judge_cost_total += float(judge_cost.get("amount", 0.0))
-                if judge_cost.get("status") != "estimated":
+        completed = 0
+        # Guards every mutation below. At concurrency=1 nothing ever contends
+        # for it (record() is only ever called from the main thread, one item
+        # at a time, in items order) — this is what keeps that path's
+        # behavior byte-for-byte identical to before concurrency existed.
+        lock = threading.Lock()
+
+        def record(item: EvalItem, prediction: RAGAnswer, *, already_checkpointed: bool) -> None:
+            nonlocal retries_total, pipeline_cost_total, judge_cost_total, cost_trustworthy_so_far, completed
+            nonlocal budget_error
+            with lock:
+                predictions_by_id[item.question_id] = prediction
+                if not already_checkpointed:
+                    _append_checkpoint_line(
+                        checkpoint_handle,
+                        {"type": "prediction", "question_id": item.question_id, "prediction": prediction.to_dict()},
+                    )
+                completed += 1
+                retries_total += int(prediction.metadata.get("provider_usage", {}).get("retries", 0))
+                pipeline_cost = prediction.metadata.get("cost_estimate", {})
+                pipeline_cost_total += float(pipeline_cost.get("amount", 0.0))
+                if pipeline_cost.get("status") != "estimated":
                     cost_trustworthy_so_far = False
-                retries_total += int(prediction.metadata.get("evaluation_provider_usage", {}).get("retries", 0))
-            _emit_progress(
-                progress_path,
-                pipeline_id=pipeline.id,
-                completed=index,
-                total=len(items),
-                elapsed_s=time.perf_counter() - started_run,
-                retries=retries_total,
-                pipeline_cost=pipeline_cost_total,
-                judge_cost=judge_cost_total,
-            )
-            # Checked after the query, not before: cost is only known once the
-            # call has actually happened, so actual spend can exceed the cap by
-            # up to one query's cost. Genuinely a no-op unless every cost seen
-            # so far is "estimated" — with pricing unconfigured (or only
-            # partially configured) the guard never fires, however large the
-            # partial total looks.
-            total_cost_so_far = pipeline_cost_total + judge_cost_total
-            if (
-                max_estimated_cost_usd is not None
-                and cost_trustworthy_so_far
-                and total_cost_so_far > max_estimated_cost_usd
-            ):
-                raise BudgetExceededError(
-                    f"[{pipeline.id}] estimated cost ${total_cost_so_far:.4f} exceeded "
-                    f"max_estimated_cost_usd={max_estimated_cost_usd} after {index}/{len(items)} queries. "
-                    f"{index} completed prediction(s) are saved in {checkpoint_path} — rerun with --resume "
-                    "to continue from here."
+                if judge is not None:
+                    judge_cost = prediction.metadata.get("evaluation_cost_estimate", {})
+                    judge_cost_total += float(judge_cost.get("amount", 0.0))
+                    if judge_cost.get("status") != "estimated":
+                        cost_trustworthy_so_far = False
+                    retries_total += int(
+                        prediction.metadata.get("evaluation_provider_usage", {}).get("retries", 0)
+                    )
+                _emit_progress(
+                    progress_path,
+                    pipeline_id=pipeline.id,
+                    completed=completed,
+                    total=len(items),
+                    elapsed_s=time.perf_counter() - started_run,
+                    retries=retries_total,
+                    pipeline_cost=pipeline_cost_total,
+                    judge_cost=judge_cost_total,
                 )
+                # Checked after the query, not before: cost is only known once
+                # the call has actually happened, so actual spend can exceed
+                # the cap by up to one query's cost (or, under concurrency, by
+                # up to `concurrency` queries' worth of in-flight work).
+                # Genuinely a no-op unless every cost seen so far is
+                # "estimated" — with pricing unconfigured (or only partially
+                # configured) the guard never fires, however large the
+                # partial total looks.
+                total_cost_so_far = pipeline_cost_total + judge_cost_total
+                if (
+                    budget_error is None
+                    and max_estimated_cost_usd is not None
+                    and cost_trustworthy_so_far
+                    and total_cost_so_far > max_estimated_cost_usd
+                ):
+                    budget_error = BudgetExceededError(
+                        f"[{pipeline.id}] estimated cost ${total_cost_so_far:.4f} exceeded "
+                        f"max_estimated_cost_usd={max_estimated_cost_usd} after {completed}/{len(items)} queries. "
+                        f"{completed} completed prediction(s) are saved in {checkpoint_path} — rerun with "
+                        "--resume to continue from here."
+                    )
+
+        # Resumed items never re-run; account for them up front, in items
+        # order, exactly like the pre-concurrency loop did (they still count
+        # toward cost/retry totals and progress, just not re-checkpointed).
+        for item in items:
+            if item.question_id in resumed:
+                record(item, resumed[item.question_id], already_checkpointed=True)
+
+        fresh_items = [item for item in items if item.question_id not in resumed]
+        if concurrency <= 1:
+            # No pass separation at all — identical to the pre-concurrency loop.
+            sequential_items, concurrent_items = fresh_items, []
+        else:
+            # Latency pass: a sequential, uncontended prefix — real predictions
+            # (not re-run later), and the only honest source of per-request
+            # latency once the remainder starts contending for resources.
+            sample_count = min(latency_sample_size, len(fresh_items))
+            sequential_items, concurrent_items = fresh_items[:sample_count], fresh_items[sample_count:]
+
+        for item in sequential_items:
+            if budget_error is not None:
+                break
+            prediction = _run_single_query(
+                pipeline, item, mode=mode, latency_repetitions=latency_repetitions, judge=judge
+            )
+            record(item, prediction, already_checkpointed=False)
+        if concurrency > 1:
+            # Only needed for the report's latency_pass section below — and
+            # only actually meaningful when a pass separation happened at all.
+            sequential_latencies_ms = [
+                float(predictions_by_id[item.question_id].metadata.get("latency_ms", 0.0))
+                for item in sequential_items
+                if item.question_id in predictions_by_id
+            ]
+
+        # Quality pass: the concurrent remainder, run for throughput. Ranking/
+        # correctness of each answer doesn't depend on wall-clock timing, so
+        # running these concurrently is safe; only their *individual* latency
+        # is untrustworthy (contention), which is exactly why it was already
+        # measured above instead of here.
+        quality_pass_started = time.perf_counter()
+        if budget_error is None and concurrent_items:
+
+            def _submit(executor: ThreadPoolExecutor, item: EvalItem) -> Any:
+                return executor.submit(
+                    _run_single_query, pipeline, item, mode=mode, latency_repetitions=latency_repetitions, judge=judge
+                )
+
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                pending_items = iter(concurrent_items)
+                # Bounded sliding window: at most `concurrency` futures exist at
+                # once, front-loaded only up to that many. Submitting every
+                # remaining item up front (e.g. via a single dict/executor.map
+                # call) would let the budget guard trip only after most of the
+                # dataset had already been dispatched — overshoot would then be
+                # bounded by "how many queries fit under the cap," not by
+                # `concurrency`. Replenishing one-in-one-out, and only while
+                # budget_error is still None, is what actually bounds overshoot
+                # to the (at most `concurrency`) queries already in flight at
+                # the moment the cap trips: once tripped, `pending_items` is
+                # simply never advanced again, so no new work is ever dispatched.
+                in_flight: dict[Any, EvalItem] = {}
+                for item in pending_items:
+                    in_flight[_submit(executor, item)] = item
+                    if len(in_flight) >= concurrency:
+                        break
+                while in_flight:
+                    done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        item = in_flight.pop(future)
+                        prediction = future.result()
+                        record(item, prediction, already_checkpointed=False)
+                        quality_pass_count += 1
+                        if budget_error is None:
+                            next_item = next(pending_items, None)
+                            if next_item is not None:
+                                in_flight[_submit(executor, next_item)] = next_item
+        quality_pass_elapsed = time.perf_counter() - quality_pass_started
+        if budget_error is not None:
+            raise budget_error
     finally:
         checkpoint_handle.close()
 
+    predictions = [predictions_by_id[item.question_id] for item in items]
     evaluate_citations = profile == "citation_rag"
     metrics_by_cutoff = {
         str(cutoff): evaluate_predictions(items, predictions, k=cutoff, include_citation_metrics=evaluate_citations)
@@ -196,6 +303,23 @@ def run_eval(
     }
     metrics = metrics_by_cutoff[str(top_k)]
     query_metrics = query_metrics_by_cutoff[str(top_k)]
+    if concurrency > 1:
+        # evaluate_predictions() computed latency_ms_avg/p50/p95 from *every*
+        # prediction, including the concurrent quality pass's contended
+        # timings — those are not honest per-request latency and must not
+        # stand as the report's headline latency claim (claim_eligibility()
+        # reads exactly this field). Replace with the trustworthy,
+        # uncontended latency-pass sample instead. Every cutoff bucket shares
+        # the same substitute since latency doesn't depend on top_k.
+        trustworthy_latency_ms_avg = (
+            round(statistics.fmean(sequential_latencies_ms), 6) if sequential_latencies_ms else 0.0
+        )
+        trustworthy_latency_ms_p50 = _percentile(sequential_latencies_ms, 50)
+        trustworthy_latency_ms_p95 = _percentile(sequential_latencies_ms, 95)
+        for bucket in metrics_by_cutoff.values():
+            bucket["latency_ms_avg"] = trustworthy_latency_ms_avg
+            bucket["latency_ms_p50"] = trustworthy_latency_ms_p50
+            bucket["latency_ms_p95"] = trustworthy_latency_ms_p95
     effective_components = sorted(
         {
             canonical_fingerprint(prediction.metadata.get("components", {})): prediction.metadata.get("components", {})
@@ -221,6 +345,8 @@ def run_eval(
             suite_metadata,
             warmup_queries,
             latency_repetitions,
+            concurrency,
+            latency_sample_size,
         ),
         "metrics": metrics,
         "metrics_by_cutoff": metrics_by_cutoff,
@@ -242,6 +368,28 @@ def run_eval(
             for item, prediction in zip(items, predictions, strict=True)
         ],
     }
+    if concurrency > 1:
+        # Only present when a pass separation actually happened — at
+        # concurrency=1 there is exactly one pass and metrics.latency_ms_p50/
+        # p95 (over every query) already covers it; adding this key there
+        # would just duplicate that number under a different name.
+        report["performance"] = {
+            "latency_pass": {
+                "mode": "sequential",
+                "sampled_queries": len(sequential_latencies_ms),
+                "latency_ms_p50": _percentile(sequential_latencies_ms, 50),
+                "latency_ms_p95": _percentile(sequential_latencies_ms, 95),
+            },
+            "quality_pass": {
+                "mode": "concurrent",
+                "workers": concurrency,
+                "queries": quality_pass_count,
+                "elapsed_s": round(quality_pass_elapsed, 3),
+                "throughput_qps": round(quality_pass_count / quality_pass_elapsed, 3)
+                if quality_pass_elapsed > 0
+                else 0.0,
+            },
+        }
     report["result_fingerprint"] = _result_fingerprint(items, predictions, metrics)
     write_json(output_path, report)
     return report
@@ -330,13 +478,20 @@ def _checkpoint_header(
     judge_enabled: bool,
     warmup_queries: int,
     latency_repetitions: int,
+    concurrency: int,
+    latency_sample_size: int,
 ) -> dict[str, Any]:
     """Identify "the exact same evaluation run" so resume only reuses matching results.
 
     Any field that changes what a query would produce (mode, top_k, cutoffs,
     profile, artifact/config fingerprint, judge on/off, warm-up protocol) must
     be here — resume compares this dict for exact equality before trusting a
-    prior checkpoint's predictions.
+    prior checkpoint's predictions. ``concurrency``/``latency_sample_size``
+    don't change a prediction's *content*, but they do change how its recorded
+    latency must be interpreted (sequential-sample vs. contended quality-pass)
+    — mixing predictions checkpointed under one protocol into a resumed run
+    under a different one would silently corrupt that interpretation, so a
+    protocol change here also starts a fresh checkpoint.
     """
     return {
         "pipeline_id": pipeline.id,
@@ -352,6 +507,8 @@ def _checkpoint_header(
         "judge_enabled": judge_enabled,
         "warmup_queries": warmup_queries,
         "latency_repetitions": latency_repetitions,
+        "concurrency": concurrency,
+        "latency_sample_size": latency_sample_size,
     }
 
 
@@ -560,6 +717,8 @@ def _run_metadata(
     suite_metadata: dict[str, str] | None,
     warmup_queries: int,
     latency_repetitions: int,
+    concurrency: int,
+    latency_sample_size: int,
 ) -> dict[str, Any]:
     dataset_manifest_path = Path(dataset_path).parent / "manifest.json"
     dataset_manifest = read_json(dataset_manifest_path) if dataset_manifest_path.exists() else {}
@@ -583,6 +742,8 @@ def _run_metadata(
             "warmup_queries": warmup_queries,
             "repetitions_per_query": latency_repetitions,
             "statistic": "median",
+            "concurrency": concurrency,
+            "latency_sample_size": latency_sample_size,
         },
         "raglab_version": __version__,
         "python_version": platform.python_version(),
