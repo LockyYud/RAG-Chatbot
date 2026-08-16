@@ -23,15 +23,24 @@ Every constructor parameter must be assigned to an attribute with the same name 
 complete configuration in artifact v3. Declare `query_override_fields` explicitly. Only fields that do not change the
 persisted index belong there; embedding model, chunking, enrichment, and store parameters must remain locked.
 
-Both methods must use the shared contracts:
+All three methods must use the shared contracts:
 
 - `ingest()` calls `build_ingest_manifest(..., pipeline_config=self.resolved_config())` and saves artifact v3.
 - Custom index state (for example a graph, tree, or token index) is written under the artifact directory before
   `save_nodes()`; v3 records and validates checksums for every file in that bundle.
-- `query()` calls `self.load_artifact()` before provider calls.
+- `load(artifact_path)` calls `self.load_artifact(artifact_path)` (validates config/corpus drift) and builds every
+  retriever, reranker, vector store, or tool the technique needs, storing them on `self`. Finish with
+  `self._mark_loaded(artifact_path, manifest, nodes)`. Anything expensive — a learned reranker's model load, an index
+  built from `nodes` — belongs here, not in `query()`, since `load()` runs once per artifact while `query()` runs once
+  per question.
+- `query(question, mode)` calls `self._require_loaded()` first, then runs retrieval/generation/verification against the
+  state `load()` built. It does **not** take `artifact_path` and does **not** re-read the artifact.
 - `retrieval_only` performs retrieval/context construction only and returns `skipped_verification()`.
 - Public citations are canonical document IDs; `[C1]` markers are prompt-local identifiers.
 - Learned rerankers fail in strict mode. Demo fallback must be explicitly enabled and reported as the effective component.
+- If a technique calls a chat model during retrieval itself (not just full-RAG answer synthesis — e.g. HyDE, RAG-Fusion),
+  declare those constructor attribute names in `retrieval_time_models` so `doctor`/preflight require that provider key
+  even in `retrieval_only` mode.
 
 ## Acceptance checklist
 

@@ -6,13 +6,22 @@ evaluation runner all interact with techniques only through this interface, so
 that any paper — no matter how exotic its internals — can be ingested,
 queried, evaluated and benchmarked uniformly.
 
-The two abstract methods are intentionally minimal:
+The three abstract methods are intentionally minimal:
 
 * :meth:`ingest` reads documents, runs the technique's processing/indexing
   flow, persists everything needed for retrieval, and returns a manifest dict.
-* :meth:`query` loads the persisted artifact, runs the technique's inference
-  flow, and returns a :class:`RAGAnswer` whose ``metadata`` field follows the
-  schema produced by :func:`raglab.core.measure.build_query_metadata`.
+* :meth:`load` reads a persisted artifact *once* and builds whatever
+  query-time state the technique needs (nodes, vector store, retrievers,
+  rerankers, tools …), storing it on ``self``.
+* :meth:`query` runs the technique's inference flow against the state built
+  by :meth:`load` and returns a :class:`RAGAnswer` whose ``metadata`` field
+  follows the schema produced by :func:`raglab.core.measure.build_query_metadata`.
+
+Splitting artifact loading (``load``) from inference (``query``) exists so
+that evaluating many questions against one artifact pays the cost of reading
+``nodes.json`` — and constructing any learned reranker — exactly once, not
+once per question. Call :meth:`load` once, then :meth:`query` any number of
+times; calling :meth:`query` before :meth:`load` raises ``RuntimeError``.
 
 Everything else (chunking, embedding, generation, custom retrievers …) lives
 inside the technique's own ``pipeline.py``.  There is no plugin registry, no
@@ -34,7 +43,7 @@ from raglab.core.schema import JSONValue
 from raglab.core.spec import TechniqueSpec, technique_spec
 
 if TYPE_CHECKING:
-    from raglab.core.schema import ArtifactManifest, RAGAnswer
+    from raglab.core.schema import ArtifactManifest, IndexedNode, RAGAnswer
 
 
 class BasePipeline(ABC):
@@ -52,6 +61,16 @@ class BasePipeline(ABC):
     #: Constructor fields that may be changed without rebuilding the artifact.
     query_override_fields: ClassVar[frozenset[str]] = frozenset()
 
+    #: Constructor attribute names of chat/generator models that this
+    #: technique calls during *retrieval* itself (e.g. HyDE's hypothetical
+    #: document generation, RAG-Fusion's query expansion) — so they are
+    #: required even in ``retrieval_only`` mode. Most techniques only use
+    #: ``generator_model``/``verifier_model`` for full-RAG answer synthesis,
+    #: so the default (empty) is correct for them; doctor/preflight use this
+    #: to avoid demanding a chat provider key that a technique never calls in
+    #: the requested mode.
+    retrieval_time_models: ClassVar[frozenset[str]] = frozenset()
+
     @abstractmethod
     def ingest(self, input_path: str, output_path: str) -> ArtifactManifest:
         """Run end-to-end ingestion and persist a queryable artifact.
@@ -62,13 +81,25 @@ class BasePipeline(ABC):
         """
 
     @abstractmethod
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
-        """Run end-to-end inference against a persisted artifact.
+    def load(self, artifact_path: str) -> None:
+        """Load a persisted artifact and build reusable query-time state.
+
+        Call once before :meth:`query`. Implementations should call
+        ``self.load_artifact(artifact_path)`` (validates config/corpus drift),
+        then build any retrievers/rerankers/tools the technique needs and
+        store them on ``self`` so :meth:`query` does not reconstruct them —
+        or re-read ``nodes.json`` — on every call.
+        """
+
+    @abstractmethod
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        """Run one inference against the state built by :meth:`load`.
 
         ``mode`` is either ``"full_rag"`` (retrieve + generate + verify) or
         ``"retrieval_only"`` (skip generation; useful for retrieval-only
         evaluation).  Returns a :class:`RAGAnswer` whose ``metadata`` field
         was populated via :func:`raglab.core.measure.build_query_metadata`.
+        Raises ``RuntimeError`` if :meth:`load` was not called first.
         """
 
     # ─── Optional helpers ──────────────────────────────────────────────────
@@ -139,6 +170,28 @@ class BasePipeline(ABC):
             )
             raise RuntimeError(f"Pipeline configuration does not match artifact v3: {details}")
         return manifest, nodes
+
+    def _mark_loaded(self, artifact_path: str, manifest: dict[str, Any], nodes: list[IndexedNode]) -> None:
+        """Record that :meth:`load` completed; call at the end of every ``load()``.
+
+        ``manifest`` is typed as a plain ``dict`` (not :class:`ArtifactManifest`)
+        so ``self._manifest`` stays assignable to the ``dict[str, Any]``
+        parameters most helpers (e.g. ``build_query_metadata``) expect —
+        ``ArtifactManifest`` is a ``TypedDict`` and mypy does not consider a
+        TypedDict assignable to ``dict[str, Any]``.
+        """
+        self._artifact_path = str(artifact_path)
+        self._manifest = manifest
+        self._nodes = nodes
+
+    def _require_loaded(self) -> None:
+        """Raise ``RuntimeError`` if :meth:`query` is called before :meth:`load`."""
+        if getattr(self, "_manifest", None) is None:
+            raise RuntimeError(
+                f"{type(self).__name__}.query() was called before load(artifact_path). "
+                "Call pipeline.load(artifact_path) once, then pipeline.query(question, mode) "
+                "any number of times."
+            )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id!r})"

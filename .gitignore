@@ -7,6 +7,9 @@ dist/
 build/
 *.egg-info/
 artifacts/
+.env
+.env.*
+!.env.example
 benchmarks/results/*
 !benchmarks/results/.gitkeep
 !benchmarks/results/sample_research/

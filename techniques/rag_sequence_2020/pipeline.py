@@ -65,6 +65,7 @@ class RAGSequencePipeline(BasePipeline):
     query_override_fields = frozenset(
         {"generator_model", "generator_temperature", "generator_max_tokens", "top_k", "max_context_tokens"}
     )
+    _retriever: DenseRetriever
 
     def __init__(
         self,
@@ -126,26 +127,33 @@ class RAGSequencePipeline(BasePipeline):
         save_nodes(output_path, nodes, manifest, store_spec={"type": store_backend})
         return manifest
 
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
+    def load(self, artifact_path: str) -> None:
         from raglab.providers.llm_client import check_provider_ready
 
-        if mode not in {"full_rag", "retrieval_only"}:
-            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
-        manifest, nodes = self.load_artifact(artifact_path)
         check_provider_ready(self.embedding_model)
-        if mode == "full_rag":
-            check_provider_ready(self.generator_model)
+        manifest, nodes = self.load_artifact(artifact_path)
         vector_store = load_vector_store(artifact_path, nodes)
-
-        started = time.perf_counter()
-
-        # 1. Retrieve: embed query, cosine-search the vector store.
-        retriever = DenseRetriever(
+        self._retriever = DenseRetriever(
             nodes=nodes,
             vector_store=vector_store,
             embedding_model=self.embedding_model,
         )
-        retrieved = retriever.retrieve(question, self.top_k)
+        self._mark_loaded(artifact_path, manifest, nodes)
+
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        from raglab.providers.llm_client import check_provider_ready
+
+        self._require_loaded()
+        if mode not in {"full_rag", "retrieval_only"}:
+            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
+        if mode == "full_rag":
+            check_provider_ready(self.generator_model)
+        manifest = self._manifest
+
+        started = time.perf_counter()
+
+        # 1. Retrieve: embed query, cosine-search the vector store.
+        retrieved = self._retriever.retrieve(question, self.top_k)
 
         # 2. No reranker — RAG-Sequence trusts the dense scores.
         reranked = NoReranker().rerank(question, retrieved, self.top_k)

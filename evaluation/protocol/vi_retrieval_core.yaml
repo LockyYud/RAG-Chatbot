@@ -14,5 +14,6 @@
   "required_baselines": ["parent_child", "naive_rag", "bm25_hybrid_rerank"],
   "reference_baseline": "bm25_hybrid_rerank",
   "bootstrap_samples": 10000,
-  "primary_metrics": ["ndcg_at_10", "recall_at_10", "mrr"]
+  "primary_metrics": ["ndcg_at_10", "recall_at_10", "mrr"],
+  "warmup_queries": 1
 }

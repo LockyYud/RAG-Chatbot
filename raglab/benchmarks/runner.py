@@ -9,8 +9,9 @@ from typing import Any
 
 from evaluation.runner import run_eval
 from raglab.benchmarks.statistics import paired_bootstrap_delta
-from raglab.benchmarks.suites import claim_eligibility, load_suite, resolve_suite
+from raglab.benchmarks.suites import claim_eligibility, dataset_manifest, is_git_dirty, load_suite, resolve_suite
 from raglab.core.base import load_pipeline, load_pipeline_for_artifact
+from raglab.core.doctor import diagnose_technique
 from raglab.core.io import read_jsonl, write_json
 from raglab.core.measure import canonical_fingerprint
 from raglab.core.schema import ArtifactManifest
@@ -31,7 +32,7 @@ def run_benchmarks(
     seed: int = 42,
     suite_path: str | None = None,
     judge_spec: dict[str, Any] | None = None,
-    warmup_queries: int = 0,
+    warmup_queries: int | None = None,
     latency_repetitions: int = 1,
 ) -> dict[str, Any]:
     if top_k is not None and top_k < 1:
@@ -40,15 +41,22 @@ def run_benchmarks(
         raise ValueError("docs and qa are required unless --suite supplies them")
     suite = load_suite(suite_path) if suite_path else None
     if suite:
-        resolved = resolve_suite(suite, docs=docs, qa=qa, mode=mode, top_k=top_k)
+        # ``warmup_queries=None`` means "the caller did not explicitly ask for
+        # a value" — only a value the caller actually passed can conflict
+        # with a suite-locked warmup_queries. Otherwise a claim-eligible
+        # suite's lock would reject its own CLI default every time.
+        resolved = resolve_suite(suite, docs=docs, qa=qa, mode=mode, top_k=top_k, warmup_queries=warmup_queries)
         docs, qa = str(resolved["docs"]), str(resolved["qa"])
         mode, top_k = str(resolved["mode"]), int(resolved["top_k"])
+        if "warmup_queries" in resolved:
+            warmup_queries = int(resolved["warmup_queries"])
         profile = str(suite.get("profile", profile))
         missing = sorted(set(suite["required_baselines"]) - set(technique_ids))
         if missing:
             raise ValueError(f"Suite requires techniques: {', '.join(missing)}")
     mode = mode or "full_rag"
     top_k = top_k or 5
+    warmup_queries = warmup_queries if warmup_queries is not None else 0
     cutoffs = list(suite.get("cutoffs", [top_k])) if suite else [top_k]
     bootstrap_samples = int(suite.get("bootstrap_samples", 10_000)) if suite else 10_000
     output_dir = Path(output)
@@ -83,12 +91,18 @@ def run_benchmarks(
             if report is not None:
                 evaluation = json.loads(report.read_text(encoding="utf-8"))
             else:
-                pipeline = load_pipeline(technique_id)
-                if pipeline is None:
-                    raise RuntimeError(f"Unknown bundled technique '{technique_id}'")
-                ingest_started = time.perf_counter()
-                manifest = pipeline.ingest(docs, str(artifact))
-                index_time_ms = round((time.perf_counter() - ingest_started) * 1000, 3)
+                if manifest is None:
+                    pipeline = load_pipeline(technique_id)
+                    if pipeline is None:
+                        raise RuntimeError(f"Unknown bundled technique '{technique_id}'")
+                    ingest_started = time.perf_counter()
+                    manifest = pipeline.ingest(docs, str(artifact))
+                    index_time_ms = round((time.perf_counter() - ingest_started) * 1000, 3)
+                # else: --resume and a valid artifact already exists but no
+                # report matched (the prior attempt never finished eval, or
+                # finished under different eval params) — reuse the existing
+                # artifact instead of paying to ingest again; run_eval()'s own
+                # per-query checkpoint resumes from wherever it stopped.
                 fingerprint = manifest["corpus"]["fingerprint"].split(":", 1)[-1][:10]
                 report = output_dir / f"{technique_id}_{fingerprint}_eval.json"
                 query_pipeline = load_pipeline_for_artifact(technique_id, artifact)
@@ -149,6 +163,78 @@ def run_benchmarks(
     _write_csv(output_dir / "summary.csv", rows)
     _write_markdown(output_dir / "summary.md", rows, warnings, top_k=top_k)
     return {**payload, "summary": str(summary_path)}
+
+
+def run_preflight(
+    *,
+    technique_ids: list[str],
+    docs: str | None,
+    qa: str | None,
+    mode: str | None = None,
+    top_k: int | None = None,
+    suite_path: str | None = None,
+    warmup_queries: int | None = None,
+) -> dict[str, Any]:
+    """Check everything that can fail *before* spending an ingest/query/API call.
+
+    Runs the suite/dataset resolution, the git-dirty and dataset-eligibility
+    gates from ``claim_eligibility`` (the ones that do not depend on any
+    run's results), and ``doctor`` for every required technique — all without
+    ingesting a single document. A long benchmark should never discover a
+    missing API key or a dirty worktree after hours of work; it should
+    discover that in seconds, here.
+    """
+    reasons: list[str] = []
+    if not suite_path and (not docs or not qa):
+        raise ValueError("docs and qa are required unless --suite supplies them")
+    suite = load_suite(suite_path) if suite_path else None
+    if suite:
+        try:
+            resolved = resolve_suite(suite, docs=docs, qa=qa, mode=mode, top_k=top_k, warmup_queries=warmup_queries)
+            docs, qa = str(resolved["docs"]), str(resolved["qa"])
+            mode = str(resolved["mode"])
+            if "warmup_queries" in resolved:
+                warmup_queries = int(resolved["warmup_queries"])
+        except ValueError as exc:
+            reasons.append(str(exc))
+        missing = sorted(set(suite.get("required_baselines", [])) - set(technique_ids))
+        if missing:
+            reasons.append(f"suite requires techniques not in --techniques: {', '.join(missing)}")
+    mode = mode or "full_rag"
+
+    if is_git_dirty():
+        reasons.append("git worktree is dirty")
+    if qa:
+        manifest = dataset_manifest(qa)
+        metadata = manifest.get("metadata", {})
+        policy = metadata.get("corpus_policy") if isinstance(metadata, dict) else None
+        if suite and suite.get("tier") == "claim_eligible" and policy != "full_upstream_corpus":
+            reasons.append(f"dataset corpus policy is {policy or 'unspecified'}")
+        minimum = int(suite.get("minimum_queries", 0)) if suite else 0
+        if minimum and int(manifest.get("queries", 0)) < minimum:
+            reasons.append(f"dataset has {manifest.get('queries', 0)} queries; suite requires {minimum}")
+
+    technique_checks: list[dict[str, Any]] = []
+    for technique_id in technique_ids:
+        pipeline = load_pipeline(technique_id)
+        if pipeline is None:
+            reasons.append(f"unknown bundled technique '{technique_id}'")
+            continue
+        diagnosis = diagnose_technique(pipeline, mode=mode)
+        technique_checks.append(diagnosis)
+        if not diagnosis["ready"]:
+            failed = "; ".join(check["detail"] for check in diagnosis["checks"] if check["status"] == "failed")
+            reasons.append(f"{technique_id} not ready: {failed}")
+
+    return {
+        "ready": not reasons,
+        "reasons": reasons,
+        "mode": mode,
+        "docs": docs,
+        "qa": qa,
+        "suite": suite,
+        "technique_checks": technique_checks,
+    }
 
 
 def has_failed_runs(result: dict[str, Any]) -> bool:

@@ -22,13 +22,16 @@ cryptic HTTP 401 later.
 
 from __future__ import annotations
 
+import functools
 import importlib
 import os
+import random
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 from raglab.core.text import token_count
 from raglab.providers.env import env_float, load_dotenv
@@ -65,6 +68,33 @@ _KEY_REQUIREMENTS: list[tuple[tuple[str, ...], str | None]] = [
     (("openrouter/",), "OPENROUTER_API_KEY"),
 ]
 
+# Renamed for provider-neutral pricing (litellm supports many providers, not
+# just OpenAI). Old names are rejected rather than silently aliased so a stale
+# .env cannot make ``cost_estimate`` quietly report the wrong number.
+_LEGACY_PRICING_ENV: dict[str, str] = {
+    "OPENAI_EMBEDDING_INPUT_COST_PER_1K": "LLM_EMBEDDING_INPUT_COST_PER_1K",
+    "OPENAI_CHAT_INPUT_COST_PER_1K": "LLM_CHAT_INPUT_COST_PER_1K",
+    "OPENAI_CHAT_OUTPUT_COST_PER_1K": "LLM_CHAT_OUTPUT_COST_PER_1K",
+}
+
+
+def validate_pricing_env() -> None:
+    """Raise ``RuntimeError`` if a legacy ``OPENAI_*_COST_PER_1K`` var is set.
+
+    These were renamed to ``LLM_*_COST_PER_1K`` (litellm is multi-provider, not
+    OpenAI-only). Rejecting loudly instead of aliasing prevents a stale ``.env``
+    from silently under-reporting cost.
+    """
+    load_dotenv()
+    present = sorted(name for name in _LEGACY_PRICING_ENV if os.getenv(name) is not None)
+    if present:
+        migrations = "; ".join(f"{name} -> {_LEGACY_PRICING_ENV[name]}" for name in present)
+        raise RuntimeError(
+            f"Legacy pricing environment variable(s) are no longer read: {migrations}. "
+            "Rename them in your .env / shell environment (see .env.example)."
+        )
+
+
 def check_provider_ready(model: str) -> None:
     """Raise ``RuntimeError`` with a helpful message if the API key for *model* is missing.
 
@@ -77,6 +107,7 @@ def check_provider_ready(model: str) -> None:
         check_provider_ready(self.generator_model)   # in query()
     """
     load_dotenv()
+    validate_pricing_env()
     name = model.strip().lower()
     for prefixes, env_var in _KEY_REQUIREMENTS:
         if any(name.startswith(p) for p in prefixes):
@@ -93,6 +124,56 @@ def check_provider_ready(model: str) -> None:
     # Unknown prefix — let litellm raise its own error at call time.
 
 
+# ─── Retry / backoff ─────────────────────────────────────────────────────────
+
+# Names, not classes: litellm re-raises provider errors as its own exception
+# hierarchy (mirroring the openai SDK's), but importing that hierarchy here
+# would force litellm to load even when every call is mocked out in tests.
+# Transient: worth retrying. Anything else (auth, bad request, not found,
+# model/config errors) fails fast — retrying those only burns time and money.
+_RETRYABLE_EXCEPTION_NAMES = {
+    "RateLimitError",
+    "APIConnectionError",
+    "APIConnectionRateLimitError",
+    "Timeout",
+    "APITimeoutError",
+    "InternalServerError",
+    "ServiceUnavailableError",
+    "APIError",
+}
+
+_T = TypeVar("_T")
+
+
+def _is_retryable(exc: Exception) -> bool:
+    return type(exc).__name__ in _RETRYABLE_EXCEPTION_NAMES
+
+
+def _call_with_retry(
+    func: Callable[[], _T],
+    *,
+    max_attempts: int = 5,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+) -> tuple[_T, int]:
+    """Call *func*, retrying transient failures with exponential backoff + jitter.
+
+    Returns ``(result, retry_count)``. Non-transient errors (auth, bad
+    request, unknown model) and the final attempt's transient error both
+    propagate immediately — a confused caller should fail fast, not spin.
+    """
+    attempt = 0
+    while True:
+        try:
+            return func(), attempt
+        except Exception as exc:
+            if attempt + 1 >= max_attempts or not _is_retryable(exc):
+                raise
+            delay = min(max_delay, base_delay * (2**attempt)) * (0.5 + random.random())
+            time.sleep(min(delay, max_delay))
+            attempt += 1
+
+
 # ─── Result type ─────────────────────────────────────────────────────────────
 
 
@@ -102,6 +183,7 @@ class ChatCompletionResult:
     usage: dict[str, int]
     latency_ms: float
     estimated_cost: float
+    retries: int = 0
 
 
 @dataclass(slots=True)
@@ -114,6 +196,7 @@ class ProviderUsageLedger:
     embedding_tokens: int = 0
     estimated_cost: float = 0.0
     pricing_configured: bool = False
+    retries: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -122,6 +205,7 @@ class ProviderUsageLedger:
             "chat_usage": self.chat_usage,
             "embedding_tokens": self.embedding_tokens,
             "estimated_cost": round(self.estimated_cost, 8),
+            "retries": self.retries,
             "cost_status": (
                 "estimated" if self.pricing_configured or self.chat_calls + self.embedding_calls == 0 else "unknown"
             ),
@@ -165,18 +249,21 @@ class LLMClient:
         litellm = _litellm()
         for start in range(0, len(inputs), batch_size):
             batch = inputs[start : start + batch_size]
-            response = litellm.embedding(model=model, input=batch, timeout=self.timeout)
+            response, retries = _call_with_retry(
+                functools.partial(litellm.embedding, model=model, input=batch, timeout=self.timeout)
+            )
             # litellm returns EmbeddingResponse; .data is a list of Embedding objects
             sorted_items = sorted(response.data, key=lambda item: item["index"])
             vectors.extend(item["embedding"] for item in sorted_items)
             ledger = _ACTIVE_LEDGER.get()
             if ledger is not None:
                 tokens = sum(token_count(text) for text in batch)
-                rate = env_float("OPENAI_EMBEDDING_INPUT_COST_PER_1K", 0.0)
+                rate = env_float("LLM_EMBEDDING_INPUT_COST_PER_1K", 0.0)
                 ledger.embedding_calls += 1
                 ledger.embedding_tokens += tokens
                 ledger.estimated_cost += tokens / 1000 * rate
                 ledger.pricing_configured = ledger.pricing_configured or rate > 0
+                ledger.retries += retries
         return vectors
 
     # ── Chat completions ─────────────────────────────────────────────────────
@@ -190,12 +277,14 @@ class LLMClient:
     ) -> ChatCompletionResult:
         started = time.perf_counter()
         litellm = _litellm()
-        response = litellm.completion(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=self.timeout,
+        response, retries = _call_with_retry(
+            lambda: litellm.completion(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=self.timeout,
+            )
         )
         latency_ms = (time.perf_counter() - started) * 1000
         text: str = response.choices[0].message.content or ""
@@ -205,6 +294,7 @@ class LLMClient:
             usage=usage,
             latency_ms=round(latency_ms, 3),
             estimated_cost=_estimate_chat_cost(usage),
+            retries=retries,
         )
         ledger = _ACTIVE_LEDGER.get()
         if ledger is not None:
@@ -215,6 +305,7 @@ class LLMClient:
             ledger.pricing_configured = ledger.pricing_configured or any(
                 env_float(name, 0.0) > 0 for name in ("LLM_CHAT_INPUT_COST_PER_1K", "LLM_CHAT_OUTPUT_COST_PER_1K")
             )
+            ledger.retries += retries
         return result
 
 

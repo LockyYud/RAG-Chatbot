@@ -174,6 +174,10 @@ class HyDEPipeline(BasePipeline):
     id = "hyde_2022"
     name = "HyDE — Hypothetical Document Embeddings (Gao et al., 2022)"
     implementation_level = "paper_inspired"
+    # HyDE calls the chat model to imagine documents during *retrieval*, not
+    # just during full_rag answer synthesis — so generator_model is needed in
+    # retrieval_only mode too, unlike most other techniques.
+    retrieval_time_models = frozenset({"generator_model"})
     query_override_fields = frozenset(
         {
             "generator_model",
@@ -186,6 +190,7 @@ class HyDEPipeline(BasePipeline):
             "max_context_tokens",
         }
     )
+    _retriever: HyDERetriever
 
     def __init__(
         self,
@@ -250,18 +255,14 @@ class HyDEPipeline(BasePipeline):
         save_nodes(output_path, nodes, manifest, store_spec={"type": store_backend})
         return manifest
 
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
-        if mode not in {"full_rag", "retrieval_only"}:
-            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
-        manifest, nodes = self.load_artifact(artifact_path)
+    def load(self, artifact_path: str) -> None:
         check_provider_ready(self.embedding_model)
         check_provider_ready(self.generator_model)
+        manifest, nodes = self.load_artifact(artifact_path)
         _ = load_vector_store(artifact_path, nodes)  # warm the store; HyDE searches nodes directly
-
-        started = time.perf_counter()
-
-        # === The HyDE step replaces the standard dense retriever ===
-        retriever = HyDERetriever(
+        # Built once: the LLM+embedder handles inside are stateless per call,
+        # only ``last_metadata`` is written then read within one query().
+        self._retriever = HyDERetriever(
             nodes=nodes,
             embedding_model=self.embedding_model,
             generator_model=self.generator_model,
@@ -269,6 +270,18 @@ class HyDEPipeline(BasePipeline):
             temperature=self.hyde_temperature,
             max_tokens=self.hyde_max_tokens,
         )
+        self._mark_loaded(artifact_path, manifest, nodes)
+
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        self._require_loaded()
+        if mode not in {"full_rag", "retrieval_only"}:
+            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
+        manifest = self._manifest
+
+        started = time.perf_counter()
+
+        # === The HyDE step replaces the standard dense retriever ===
+        retriever = self._retriever
         retrieved = retriever.retrieve(question, self.top_k)
         # ===========================================================
 

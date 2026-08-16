@@ -55,7 +55,7 @@ def test_direct_query_rejects_locked_config_drift(tmp_path: Path) -> None:
     mismatched = load_pipeline("parent_child", params={"child_size": 99})
     assert mismatched is not None
     with pytest.raises(RuntimeError, match="configuration does not match"):
-        mismatched.query(str(artifact), "question", mode="retrieval_only")
+        mismatched.load(str(artifact))
 
 
 def test_self_rag_retrieval_only_does_not_touch_llm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,7 +70,8 @@ def test_self_rag_retrieval_only_does_not_touch_llm(tmp_path: Path, monkeypatch:
         raise AssertionError(f"provider preflight should not run for {model}")
 
     monkeypatch.setattr(self_rag_module, "check_provider_ready", unexpected_provider_call)
-    answer = pipeline.query(str(artifact), "question", mode="retrieval_only")
+    pipeline.load(str(artifact))
+    answer = pipeline.query("question", mode="retrieval_only")
     assert answer.metadata["verification"]["status"] == "skipped"
     assert answer.metadata["cost_estimate"]["amount"] == 0.0
 

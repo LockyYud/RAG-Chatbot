@@ -217,7 +217,7 @@ def _retrieval_cost(
         question_tokens = token_count(question) if question else 0
         tokens = question_tokens * embedding_inputs
 
-    amount = tokens / 1000 * env_float("OPENAI_EMBEDDING_INPUT_COST_PER_1K", 0.0)
+    amount = tokens / 1000 * env_float("LLM_EMBEDDING_INPUT_COST_PER_1K", 0.0)
     amount += float(retrieval_runtime.get("estimated_cost", 0.0))
     return {
         "currency": "USD",

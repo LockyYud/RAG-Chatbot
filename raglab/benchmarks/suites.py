@@ -22,7 +22,7 @@ def load_suite(path: str | Path) -> dict[str, Any]:
     if not isinstance(suite["required_baselines"], list):
         raise ValueError("suite.required_baselines must be a list")
     if suite["tier"] == "claim_eligible":
-        frozen_fields = {"reference_baseline", "cutoffs", "bootstrap_samples", "primary_metrics"}
+        frozen_fields = {"reference_baseline", "cutoffs", "bootstrap_samples", "primary_metrics", "warmup_queries"}
         missing_frozen = sorted(frozen_fields - set(suite))
         if missing_frozen:
             raise ValueError(f"Claim-eligible suite missing fields: {', '.join(missing_frozen)}")
@@ -32,6 +32,11 @@ def load_suite(path: str | Path) -> dict[str, Any]:
             raise ValueError("suite.primary_metrics must be a non-empty list")
         if not isinstance(suite["bootstrap_samples"], int) or suite["bootstrap_samples"] < 1:
             raise ValueError("suite.bootstrap_samples must be a positive integer")
+        if not isinstance(suite["warmup_queries"], int) or suite["warmup_queries"] < 1:
+            # A claim-eligible run's latency must exclude cold-start effects
+            # (artifact load, first-call model init); at least one discarded
+            # warm-up query is required to make that claim credible.
+            raise ValueError("Claim-eligible suite.warmup_queries must be a positive integer")
     dataset = suite["dataset"]
     if not isinstance(dataset, dict) or not isinstance(dataset.get("fingerprint"), str):
         raise ValueError("suite.dataset.fingerprint must lock the prepared dataset revision")
@@ -45,7 +50,13 @@ def load_suite(path: str | Path) -> dict[str, Any]:
 
 
 def resolve_suite(
-    suite: dict[str, Any], *, docs: str | None, qa: str | None, mode: str | None, top_k: int | None
+    suite: dict[str, Any],
+    *,
+    docs: str | None,
+    qa: str | None,
+    mode: str | None,
+    top_k: int | None,
+    warmup_queries: int | None = None,
 ) -> dict[str, Any]:
     resolved = dict(suite)
     for key, supplied in (("docs", docs), ("qa", qa)):
@@ -59,13 +70,17 @@ def resolve_suite(
         raise ValueError(f"Suite locks mode={suite['mode']}; received {mode}")
     if top_k is not None and top_k != int(suite["top_k"]):
         raise ValueError(f"Suite locks top_k={suite['top_k']}; received {top_k}")
-    manifest = _dataset_manifest(str(resolved["qa"]))
+    if "warmup_queries" in suite and warmup_queries is not None and warmup_queries != int(suite["warmup_queries"]):
+        raise ValueError(f"Suite locks warmup_queries={suite['warmup_queries']}; received {warmup_queries}")
+    manifest = dataset_manifest(str(resolved["qa"]))
     if manifest.get("fingerprint") != suite["dataset"]["fingerprint"]:
         raise ValueError(
             "Suite dataset fingerprint does not match the prepared dataset. Re-freeze the suite or restore data."
         )
     resolved["mode"] = suite["mode"]
     resolved["top_k"] = suite["top_k"]
+    if "warmup_queries" in suite:
+        resolved["warmup_queries"] = suite["warmup_queries"]
     return resolved
 
 
@@ -89,9 +104,9 @@ def claim_eligibility(
         reasons.append("one or more techniques failed")
     if any("fallback" in str(row.get("effective_components", "")) for row in rows):
         reasons.append("a fallback component was used")
-    if _git_dirty():
+    if is_git_dirty():
         reasons.append("git worktree is dirty")
-    manifest = _dataset_manifest(qa)
+    manifest = dataset_manifest(qa)
     policy = manifest.get("metadata", {}).get("corpus_policy") if isinstance(manifest.get("metadata"), dict) else None
     if policy != "full_upstream_corpus":
         reasons.append(f"dataset corpus policy is {policy or 'unspecified'}")
@@ -166,13 +181,13 @@ def _metric_improves_when_lower(metric: str) -> bool:
     return metric in {"latency_ms_avg", "latency_ms_p50", "latency_ms_p95", "estimated_cost_avg"}
 
 
-def _dataset_manifest(qa: str) -> dict[str, Any]:
+def dataset_manifest(qa: str) -> dict[str, Any]:
     path = Path(qa)
     manifest = (path if path.is_dir() else path.parent) / "manifest.json"
     return read_json(manifest) if manifest.exists() else {}
 
 
-def _git_dirty() -> bool:
+def is_git_dirty() -> bool:
     try:
         command = ["git", "status", "--porcelain"]
         completed = subprocess.run(command, capture_output=True, check=True, text=True, timeout=2)

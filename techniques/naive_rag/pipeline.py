@@ -60,6 +60,7 @@ class NaiveRAGPipeline(BasePipeline):
     name = "Naive RAG (baseline)"
     implementation_level = "baseline"
     query_override_fields = frozenset({"top_k", "rerank_top_k", "max_context_tokens"})
+    _retriever: DenseRetriever
 
     def __init__(
         self,
@@ -124,21 +125,28 @@ class NaiveRAGPipeline(BasePipeline):
         save_nodes(output_path, nodes, manifest)
         return manifest
 
-    # ─── Query ─────────────────────────────────────────────────────────────
+    # ─── Load / Query ────────────────────────────────────────────────────────
 
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
+    def load(self, artifact_path: str) -> None:
         from raglab.providers.llm_client import check_provider_ready
 
+        check_provider_ready(self.embedding_model)
+        manifest, nodes = self.load_artifact(artifact_path)
+        # Built once here (not per query): avoids re-reading nodes.json and
+        # re-constructing the retriever for every question in an eval run.
+        self._retriever = DenseRetriever(nodes=nodes, embedding_model=self.embedding_model)
+        self._mark_loaded(artifact_path, manifest, nodes)
+
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        self._require_loaded()
         if mode not in {"full_rag", "retrieval_only"}:
             raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
-        manifest, nodes = self.load_artifact(artifact_path)
-        check_provider_ready(self.embedding_model)
+        manifest = self._manifest
 
         started = time.perf_counter()
 
         # 1. Retrieve: embed the question, then cosine search over stored node vectors.
-        retriever = DenseRetriever(nodes=nodes, embedding_model=self.embedding_model)
-        retrieved = retriever.retrieve(question, self.top_k)
+        retrieved = self._retriever.retrieve(question, self.top_k)
 
         # 2. Rerank: identity — naive RAG has no learned reranker.
         reranked = NoReranker().rerank(question, retrieved, self.rerank_top_k)

@@ -16,7 +16,8 @@ def test_ingest_query_eval_smoke(tmp_path: Path) -> None:
     manifest = pipeline.ingest("datasets/sample/docs", str(artifact))
     assert manifest["corpus"]["node_count"] > 0
 
-    answer = pipeline.query(str(artifact), "Điều kiện xét tuyển ngành trí tuệ nhân tạo là gì?")
+    pipeline.load(str(artifact))
+    answer = pipeline.query("Điều kiện xét tuyển ngành trí tuệ nhân tạo là gì?")
     assert "tốt nghiệp" in answer.answer.lower()
     assert answer.citations
     assert answer.metadata["verification"]["grounded"] is True

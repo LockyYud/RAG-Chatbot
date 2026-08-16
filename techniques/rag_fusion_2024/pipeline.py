@@ -180,6 +180,10 @@ class RAGFusionPipeline(BasePipeline):
     id = "rag_fusion_2024"
     name = "RAG-Fusion — multi-query + RRF (Rackauckas, 2024)"
     implementation_level = "paper_inspired"
+    # RAG-Fusion calls the chat model to expand the query during *retrieval*,
+    # not just full_rag answer synthesis — needed in retrieval_only mode too.
+    retrieval_time_models = frozenset({"generator_model"})
+    _retriever: RAGFusionRetriever
     query_override_fields = frozenset(
         {
             "generator_model",
@@ -261,18 +265,12 @@ class RAGFusionPipeline(BasePipeline):
         save_nodes(output_path, nodes, manifest, store_spec={"type": store_backend})
         return manifest
 
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
-        if mode not in {"full_rag", "retrieval_only"}:
-            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
-        manifest, nodes = self.load_artifact(artifact_path)
+    def load(self, artifact_path: str) -> None:
         check_provider_ready(self.embedding_model)
         check_provider_ready(self.generator_model)
+        manifest, nodes = self.load_artifact(artifact_path)
         _ = load_vector_store(artifact_path, nodes)
-
-        started = time.perf_counter()
-
-        # === The RAG-Fusion step ===
-        retriever = RAGFusionRetriever(
+        self._retriever = RAGFusionRetriever(
             nodes=nodes,
             embedding_model=self.embedding_model,
             generator_model=self.generator_model,
@@ -282,6 +280,18 @@ class RAGFusionPipeline(BasePipeline):
             temperature=self.fusion_temperature,
             max_tokens=self.fusion_max_tokens,
         )
+        self._mark_loaded(artifact_path, manifest, nodes)
+
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        self._require_loaded()
+        if mode not in {"full_rag", "retrieval_only"}:
+            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
+        manifest = self._manifest
+
+        started = time.perf_counter()
+
+        # === The RAG-Fusion step ===
+        retriever = self._retriever
         retrieved = retriever.retrieve(question, self.top_k)
         # ===========================
 

@@ -81,6 +81,8 @@ class ContextualRetrievalPipeline(BasePipeline):
             "allow_fallback",
         }
     )
+    _retriever: RRFHybridRetriever
+    _reranker: CrossEncoderReranker
 
     def __init__(
         self,
@@ -167,32 +169,40 @@ class ContextualRetrievalPipeline(BasePipeline):
         save_nodes(output_path, nodes, manifest, store_spec={"type": store_backend})
         return manifest
 
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
+    def load(self, artifact_path: str) -> None:
         from raglab.providers.llm_client import check_provider_ready
 
-        if mode not in {"full_rag", "retrieval_only"}:
-            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
-        manifest, nodes = self.load_artifact(artifact_path)
         check_provider_ready(self.embedding_model)
-        if mode == "full_rag":
-            check_provider_ready(self.generator_model)
-
+        manifest, nodes = self.load_artifact(artifact_path)
         vector_store = load_vector_store(artifact_path, nodes)
-
-        started = time.perf_counter()
-
         # 1. Hybrid retrieve over the contextualized index (BM25 + dense, RRF fused).
-        retriever = RRFHybridRetriever(
+        self._retriever = RRFHybridRetriever(
             nodes=nodes,
             vector_store=vector_store,
             k=self.rrf_k,
             candidate_k=self.candidate_k,
             embedding_model=self.embedding_model,
         )
+        # 2. Cross-encoder rerank (lexical fallback when the extra is absent).
+        self._reranker = CrossEncoderReranker(model=self.reranker_model, strict=not self.allow_fallback)
+        self._mark_loaded(artifact_path, manifest, nodes)
+
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        from raglab.providers.llm_client import check_provider_ready
+
+        self._require_loaded()
+        if mode not in {"full_rag", "retrieval_only"}:
+            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
+        manifest = self._manifest
+        if mode == "full_rag":
+            check_provider_ready(self.generator_model)
+
+        started = time.perf_counter()
+
+        retriever = self._retriever
         retrieved = retriever.retrieve(question, self.candidate_k)
 
-        # 2. Cross-encoder rerank (lexical fallback when the extra is absent).
-        reranker = CrossEncoderReranker(model=self.reranker_model, strict=not self.allow_fallback)
+        reranker = self._reranker
         reranked = reranker.rerank(question, retrieved, self.rerank_top_k)
 
         # 3. Citation context for honest provenance.

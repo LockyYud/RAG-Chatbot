@@ -74,6 +74,7 @@ class TemplatePipeline(BasePipeline):
     name = "TODO: short paper title"
     implementation_level = "paper_inspired"
     query_override_fields = frozenset({"top_k", "max_context_tokens"})
+    _retriever: BM25Retriever
 
     def __init__(
         self,
@@ -117,16 +118,24 @@ class TemplatePipeline(BasePipeline):
         save_nodes(output_path, nodes, manifest)
         return manifest
 
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
+    def load(self, artifact_path: str) -> None:
+        manifest, nodes = self.load_artifact(artifact_path)
+        # TODO: swap in your paper-specific retriever / reranker / verifier.
+        # Build it here (once) rather than in query() — anything expensive
+        # (a learned reranker's model load, index construction) should happen
+        # once per artifact, not once per question.
+        self._retriever = BM25Retriever(nodes=nodes)
+        self._mark_loaded(artifact_path, manifest, nodes)
+
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        self._require_loaded()
         if mode not in {"full_rag", "retrieval_only"}:
             raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
-        manifest, nodes = self.load_artifact(artifact_path)
+        manifest = self._manifest
 
         started = time.perf_counter()
 
-        # TODO: swap in your paper-specific retriever / reranker / verifier.
-        retriever = BM25Retriever(nodes=nodes)
-        retrieved = retriever.retrieve(question, self.top_k)
+        retrieved = self._retriever.retrieve(question, self.top_k)
         reranked = NoReranker().rerank(question, retrieved, self.top_k)
         context = CitationContextBuilder(max_tokens=self.max_context_tokens).build_context(question, reranked)
 

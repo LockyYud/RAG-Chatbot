@@ -122,7 +122,7 @@ def main() -> None:
     bench_parser.add_argument("--techniques", nargs="+", required=True)
     bench_parser.add_argument("--docs")
     bench_parser.add_argument("--qa")
-    bench_parser.add_argument("--output", required=True)
+    bench_parser.add_argument("--output", help="Required unless --preflight")
     bench_parser.add_argument("--mode", choices=["full_rag", "retrieval_only"])
     bench_parser.add_argument("--top-k", type=int)
     bench_parser.add_argument(
@@ -133,8 +133,18 @@ def main() -> None:
     bench_parser.add_argument("--suite", help="Path to a machine-readable benchmark suite contract")
     bench_parser.add_argument("--judge", action="store_true", help="Enable OpenAI-compatible LLM judge metrics")
     bench_parser.add_argument("--judge-model", default="gpt-4.1-mini")
-    bench_parser.add_argument("--warmup-queries", type=int, default=0)
+    bench_parser.add_argument(
+        "--warmup-queries",
+        type=int,
+        default=None,
+        help="Default 0 unless a suite locks a value; explicit values conflicting with a locked suite are rejected",
+    )
     bench_parser.add_argument("--latency-repetitions", type=int, default=1)
+    bench_parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Check suite/dataset/provider/dependency readiness only; do not ingest or query anything",
+    )
 
     experiment_parser = subparsers.add_parser("experiment", help="Run a repeatable multi-trial benchmark matrix")
     experiment_parser.add_argument("--techniques", nargs="+", required=True)
@@ -195,6 +205,7 @@ def main() -> None:
 
     doctor_parser = subparsers.add_parser("doctor", help="Check technique dependencies and provider configuration")
     _add_technique_args(doctor_parser)
+    doctor_parser.add_argument("--mode", choices=["full_rag", "retrieval_only"], default="full_rag")
 
     args = parser.parse_args()
     if args.command == "ingest":
@@ -202,7 +213,8 @@ def main() -> None:
         _print(pipeline.ingest(args.input, args.output))
     elif args.command == "query":
         pipeline = _resolve_artifact_pipeline(args, interactive=True)
-        answer = pipeline.query(args.artifact, args.query, mode=args.mode)
+        pipeline.load(args.artifact)
+        answer = pipeline.query(args.query, mode=args.mode)
         _print(answer.to_dict())
     elif args.command == "eval":
         pipeline = _resolve_artifact_pipeline(args)
@@ -276,7 +288,7 @@ def main() -> None:
         elif args.techniques_command == "show":
             _print(get_pipeline_metadata(args.technique_id))
     elif args.command == "doctor":
-        _print(diagnose_technique(_resolve_pipeline(args)))
+        _print(diagnose_technique(_resolve_pipeline(args), mode=args.mode))
 
 
 def _compare(runs: list[str], dataset: str, output: str, top_k: int) -> None:
@@ -328,10 +340,29 @@ def _compare_warnings(rows: list[dict[str, Any]]) -> list[str]:
 
 
 def _bench(args: argparse.Namespace) -> None:
-    from raglab.benchmarks.runner import has_failed_runs, run_benchmarks
+    from raglab.benchmarks.runner import has_failed_runs, run_benchmarks, run_preflight
 
     if not args.suite and (not args.docs or not args.qa):
         raise SystemExit("Provide --docs and --qa, or use --suite.")
+    if args.preflight:
+        try:
+            result = run_preflight(
+                technique_ids=args.techniques,
+                docs=args.docs,
+                qa=args.qa,
+                mode=args.mode,
+                top_k=args.top_k,
+                suite_path=args.suite,
+                warmup_queries=args.warmup_queries,
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        _print(result)
+        if not result["ready"]:
+            raise SystemExit(1)
+        return
+    if not args.output:
+        raise SystemExit("--output is required unless --preflight is set.")
     try:
         result = run_benchmarks(
             technique_ids=args.techniques,

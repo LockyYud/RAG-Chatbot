@@ -55,6 +55,7 @@ class ParentChildPipeline(BasePipeline):
     name = "Parent-Child Chunking (small-to-big retrieval)"
     implementation_level = "production_pattern"
     query_override_fields = frozenset({"top_k", "rerank_top_k", "rerank_weight", "max_context_tokens"})
+    _retriever: BM25Retriever
 
     def __init__(
         self,
@@ -105,16 +106,22 @@ class ParentChildPipeline(BasePipeline):
         save_nodes(output_path, nodes, manifest)
         return manifest
 
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
+    def load(self, artifact_path: str) -> None:
+        manifest, nodes = self.load_artifact(artifact_path)
+        # BM25 term stats are built once here instead of once per query.
+        self._retriever = BM25Retriever(nodes=nodes)
+        self._mark_loaded(artifact_path, manifest, nodes)
+
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        self._require_loaded()
         if mode not in {"full_rag", "retrieval_only"}:
             raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
-        manifest, nodes = self.load_artifact(artifact_path)
+        manifest = self._manifest
 
         started = time.perf_counter()
 
         # 1. Retrieve children with BM25 (cheap, no embeddings, strong on headings).
-        retriever = BM25Retriever(nodes=nodes)
-        retrieved = retriever.retrieve(question, self.top_k)
+        retrieved = self._retriever.retrieve(question, self.top_k)
 
         # 2. Lexical-overlap rerank — boosts results that share rare terms
         #    with the query, a cheap stand-in for cross-encoder reranking.

@@ -82,6 +82,8 @@ class AgenticRAGPipeline(BasePipeline):
             "allow_fallback",
         }
     )
+    _tools: dict[str, Tool]
+    _reranker: CrossEncoderReranker
 
     def __init__(
         self,
@@ -154,26 +156,38 @@ class AgenticRAGPipeline(BasePipeline):
         save_nodes(output_path, nodes, manifest, store_spec={"type": store_backend})
         return manifest
 
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
+    def load(self, artifact_path: str) -> None:
         from raglab.providers.llm_client import check_provider_ready
 
-        if mode not in {"full_rag", "retrieval_only"}:
-            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
-        manifest, nodes = self.load_artifact(artifact_path)
         # The agent itself is an LLM, so a chat model is required in both modes.
         check_provider_ready(self.embedding_model)
         check_provider_ready(self.agent_model)
+        manifest, nodes = self.load_artifact(artifact_path)
+        vector_store = load_vector_store(artifact_path, nodes)
+        self._tools = self._build_tools(nodes, vector_store)
+        # Shared cross-encoder loaded once — reused across the agent's evidence
+        # rerank on every query, not reloaded per question.
+        self._reranker = CrossEncoderReranker(model=self.reranker_model, strict=not self.allow_fallback)
+        self._mark_loaded(artifact_path, manifest, nodes)
+
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        from raglab.providers.llm_client import check_provider_ready
+
+        self._require_loaded()
+        if mode not in {"full_rag", "retrieval_only"}:
+            raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
+        manifest = self._manifest
         if mode == "full_rag":
             check_provider_ready(self.generator_model)
 
-        vector_store = load_vector_store(artifact_path, nodes)
-
         started = time.perf_counter()
 
-        tools = self._build_tools(nodes, vector_store)
+        # A fresh policy/controller per query: the policy closure accumulates
+        # LLM call/cost stats across the steps of *this* question's agent loop
+        # (see agent.runtime below), so it must not be shared across queries.
         policy = make_llm_policy(self.agent_model)
         controller = AgenticRetrievalController(
-            tools=tools,
+            tools=self._tools,
             policy=policy,
             max_steps=self.max_steps,
             per_tool_top_k=self.per_tool_top_k,
@@ -181,7 +195,7 @@ class AgenticRAGPipeline(BasePipeline):
         run = controller.run(question)
 
         # Rerank the agent-gathered evidence with the shared cross-encoder.
-        reranker = CrossEncoderReranker(model=self.reranker_model, strict=not self.allow_fallback)
+        reranker = self._reranker
         reranked = reranker.rerank(question, run.evidence, self.rerank_top_k)
         context = CitationContextBuilder(max_tokens=self.max_context_tokens).build_context(question, reranked)
 

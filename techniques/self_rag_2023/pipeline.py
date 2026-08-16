@@ -180,6 +180,7 @@ class SelfRAGPipeline(BasePipeline):
             "verifier_max_tokens",
         }
     )
+    _retriever: BM25Retriever
 
     def __init__(
         self,
@@ -235,18 +236,23 @@ class SelfRAGPipeline(BasePipeline):
         save_nodes(output_path, nodes, manifest)
         return manifest
 
-    def query(self, artifact_path: str, question: str, mode: str = "full_rag") -> RAGAnswer:
+    def load(self, artifact_path: str) -> None:
+        manifest, nodes = self.load_artifact(artifact_path)
+        self._retriever = BM25Retriever(nodes=nodes)
+        self._mark_loaded(artifact_path, manifest, nodes)
+
+    def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
+        self._require_loaded()
         if mode not in {"full_rag", "retrieval_only"}:
             raise ValueError(f"mode must be 'full_rag' or 'retrieval_only', got {mode!r}")
-        manifest, nodes = self.load_artifact(artifact_path)
+        manifest = self._manifest
         if mode == "full_rag":
             check_provider_ready(self.generator_model)
             check_provider_ready(self.verifier_model)
 
         started = time.perf_counter()
 
-        retriever = BM25Retriever(nodes=nodes)
-        retrieved = retriever.retrieve(question, self.top_k)
+        retrieved = self._retriever.retrieve(question, self.top_k)
         reranked = LexicalOverlapReranker(weight=self.rerank_weight).rerank(question, retrieved, self.rerank_top_k)
         context = CitationContextBuilder(max_tokens=self.max_context_tokens).build_context(question, reranked)
 

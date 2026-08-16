@@ -98,7 +98,8 @@ def test_suite_contract_locks_runs_and_rejects_ineligible_claims(tmp_path) -> No
     suite_path.write_text(
         f'{{"id":"s","tier":"claim_eligible","dataset":{{"docs":"d","qa":"{fixture}","fingerprint":"sha256:fixture"}},'
         '"mode":"retrieval_only","top_k":5,"required_baselines":["bm25"],"minimum_queries":1,'
-        '"reference_baseline":"bm25","cutoffs":[5],"bootstrap_samples":100,"primary_metrics":["mrr"]}',
+        '"reference_baseline":"bm25","cutoffs":[5],"bootstrap_samples":100,"primary_metrics":["mrr"],'
+        '"warmup_queries":1}',
         encoding="utf-8",
     )
     suite = load_suite(suite_path)
