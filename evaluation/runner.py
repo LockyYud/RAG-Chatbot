@@ -29,6 +29,15 @@ if TYPE_CHECKING:
 REPORT_SCHEMA_VERSION = "2"
 
 
+class BudgetExceededError(RuntimeError):
+    """Raised when a run's estimated pipeline+judge cost exceeds ``max_estimated_cost_usd``.
+
+    Completed predictions up to the point of failure are already durably
+    checkpointed, so the run can be inspected or resumed with ``--resume``
+    rather than losing the spend that already happened.
+    """
+
+
 def run_eval(
     pipeline: BasePipeline,
     artifact_path: str,
@@ -43,6 +52,7 @@ def run_eval(
     suite_metadata: dict[str, str] | None = None,
     warmup_queries: int = 0,
     latency_repetitions: int = 1,
+    max_estimated_cost_usd: float | None = None,
 ) -> dict:
     if top_k < 1:
         raise ValueError("top_k must be at least 1")
@@ -116,6 +126,11 @@ def run_eval(
         retries_total = 0
         pipeline_cost_total = 0.0
         judge_cost_total = 0.0
+        # Every cost seen so far must actually be "estimated" (not "unknown")
+        # before the running total means anything. One priced call type
+        # (e.g. embeddings) alongside an unpriced one (e.g. chat) still yields
+        # a positive-but-incomplete total — that must not trip the guard.
+        cost_trustworthy_so_far = True
         for index, item in enumerate(items, start=1):
             if item.question_id in resumed:
                 prediction = resumed[item.question_id]
@@ -129,9 +144,15 @@ def run_eval(
                 )
             predictions.append(prediction)
             retries_total += int(prediction.metadata.get("provider_usage", {}).get("retries", 0))
-            pipeline_cost_total += float(prediction.metadata.get("cost_estimate", {}).get("amount", 0.0))
+            pipeline_cost = prediction.metadata.get("cost_estimate", {})
+            pipeline_cost_total += float(pipeline_cost.get("amount", 0.0))
+            if pipeline_cost.get("status") != "estimated":
+                cost_trustworthy_so_far = False
             if judge is not None:
-                judge_cost_total += float(prediction.metadata.get("evaluation_cost_estimate", {}).get("amount", 0.0))
+                judge_cost = prediction.metadata.get("evaluation_cost_estimate", {})
+                judge_cost_total += float(judge_cost.get("amount", 0.0))
+                if judge_cost.get("status") != "estimated":
+                    cost_trustworthy_so_far = False
                 retries_total += int(prediction.metadata.get("evaluation_provider_usage", {}).get("retries", 0))
             _emit_progress(
                 progress_path,
@@ -143,6 +164,24 @@ def run_eval(
                 pipeline_cost=pipeline_cost_total,
                 judge_cost=judge_cost_total,
             )
+            # Checked after the query, not before: cost is only known once the
+            # call has actually happened, so actual spend can exceed the cap by
+            # up to one query's cost. Genuinely a no-op unless every cost seen
+            # so far is "estimated" — with pricing unconfigured (or only
+            # partially configured) the guard never fires, however large the
+            # partial total looks.
+            total_cost_so_far = pipeline_cost_total + judge_cost_total
+            if (
+                max_estimated_cost_usd is not None
+                and cost_trustworthy_so_far
+                and total_cost_so_far > max_estimated_cost_usd
+            ):
+                raise BudgetExceededError(
+                    f"[{pipeline.id}] estimated cost ${total_cost_so_far:.4f} exceeded "
+                    f"max_estimated_cost_usd={max_estimated_cost_usd} after {index}/{len(items)} queries. "
+                    f"{index} completed prediction(s) are saved in {checkpoint_path} — rerun with --resume "
+                    "to continue from here."
+                )
     finally:
         checkpoint_handle.close()
 
@@ -241,6 +280,8 @@ def _run_single_query(
     prediction.metadata["cost_estimate"] = {
         "currency": "USD",
         "amount": pipeline_provider["estimated_cost"],
+        "embedding_cost": pipeline_provider["embedding_cost"],
+        "chat_cost": pipeline_provider["chat_cost"],
         "basis": "one pipeline request; excludes judge and repeated latency measurements",
         "status": pipeline_provider["cost_status"],
     }
@@ -260,6 +301,8 @@ def _run_single_query(
         prediction.metadata["evaluation_cost_estimate"] = {
             "currency": "USD",
             "amount": evaluation_provider["estimated_cost"],
+            "embedding_cost": evaluation_provider["embedding_cost"],
+            "chat_cost": evaluation_provider["chat_cost"],
             "basis": "LLM judge only; excluded from technique cost",
             "status": evaluation_provider["cost_status"],
         }
@@ -575,14 +618,41 @@ def _git_metadata() -> dict[str, Any]:
 
 def _cost_summary(predictions: list[RAGAnswer]) -> dict[str, Any]:
     pipeline_costs: list[float] = []
+    pipeline_embedding_costs: list[float] = []
+    pipeline_chat_costs: list[float] = []
     evaluation_costs: list[float] = []
+    evaluation_embedding_costs: list[float] = []
+    evaluation_chat_costs: list[float] = []
     for prediction in predictions:
         cost = prediction.metadata.get("cost_estimate", {})
-        pipeline_costs.append(float(cost.get("amount", 0.0)) if isinstance(cost, dict) else 0.0)
+        cost = cost if isinstance(cost, dict) else {}
+        pipeline_costs.append(float(cost.get("amount", 0.0)))
+        pipeline_embedding_costs.append(float(cost.get("embedding_cost", 0.0)))
+        pipeline_chat_costs.append(float(cost.get("chat_cost", 0.0)))
         evaluation_cost = prediction.metadata.get("evaluation_cost_estimate", {})
-        evaluation_costs.append(float(evaluation_cost.get("amount", 0.0)) if isinstance(evaluation_cost, dict) else 0.0)
+        evaluation_cost = evaluation_cost if isinstance(evaluation_cost, dict) else {}
+        evaluation_costs.append(float(evaluation_cost.get("amount", 0.0)))
+        evaluation_embedding_costs.append(float(evaluation_cost.get("embedding_cost", 0.0)))
+        evaluation_chat_costs.append(float(evaluation_cost.get("chat_cost", 0.0)))
     return {
         "currency": "USD",
+        # pipeline_cost / judge_cost separate embedding vs chat spend so a
+        # technique that is expensive because of retrieval-time LLM calls
+        # (HyDE, RAG-Fusion) is distinguishable from one expensive because of
+        # generation, and judge spend never gets folded into technique cost.
+        "pipeline_cost": {
+            "total": round(sum(pipeline_costs), 8),
+            "avg": round(sum(pipeline_costs) / len(pipeline_costs), 8) if pipeline_costs else 0.0,
+            "embedding_cost_total": round(sum(pipeline_embedding_costs), 8),
+            "chat_cost_total": round(sum(pipeline_chat_costs), 8),
+        },
+        "judge_cost": {
+            "total": round(sum(evaluation_costs), 8),
+            "avg": round(sum(evaluation_costs) / len(evaluation_costs), 8) if evaluation_costs else 0.0,
+            "embedding_cost_total": round(sum(evaluation_embedding_costs), 8),
+            "chat_cost_total": round(sum(evaluation_chat_costs), 8),
+        },
+        # Back-compatible flat aliases for existing readers.
         "total_estimated_cost": round(sum(pipeline_costs), 8),
         "avg_estimated_cost": round(sum(pipeline_costs) / len(pipeline_costs), 8) if pipeline_costs else 0.0,
         "evaluation_total_estimated_cost": round(sum(evaluation_costs), 8),

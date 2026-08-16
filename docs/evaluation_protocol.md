@@ -65,3 +65,24 @@ Evaluation reports include:
 - `predictions`
 
 Benchmark runs additionally write `summary.json`, `summary.csv`, and `summary.md`.
+
+## Cost accounting
+
+`cost_summary.pipeline_cost` and `cost_summary.judge_cost` each break down into `embedding_cost_total` and
+`chat_cost_total` — a technique that is expensive because of retrieval-time LLM calls (HyDE, RAG-Fusion) is
+distinguishable from one expensive because of generation, and judge spend never gets folded into technique cost.
+
+Each prediction's `cost_estimate.status` (and `evaluation_cost_estimate.status` for the judge) is `"estimated"` only
+when *every* call type that run actually used — embedding, chat, or both — had its pricing env vars **configured**.
+"Configured" means the variable is explicitly set, including `0` for a free/local model — it is distinct from the
+variable being missing or empty, which always means `"unknown"` regardless of what the resulting dollar amount
+happens to be. A negative rate is rejected outright as a configuration error. One priced call type does not mask
+an unpriced one: a run that calls both embeddings and chat models is `"unknown"` unless `LLM_EMBEDDING_INPUT_COST_PER_1K`
+is set **and** both `LLM_CHAT_INPUT_COST_PER_1K` and `LLM_CHAT_OUTPUT_COST_PER_1K` are set.
+
+`--max-estimated-cost-usd` (on `raglab eval` and `raglab bench`) aborts a run once its estimated pipeline+judge cost
+exceeds the given USD amount, checked after each query. Completed predictions up to that point stay in the
+per-query checkpoint, so the run can be resumed (`--resume` on `bench`) instead of losing the spend that already
+happened. The guard only ever compares a running total that is entirely `"estimated"` so far — the moment any
+query's cost is `"unknown"`, the guard stops evaluating the cap for the rest of that run, no matter how large the
+partial (necessarily incomplete) total looks.

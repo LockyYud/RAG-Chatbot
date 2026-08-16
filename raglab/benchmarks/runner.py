@@ -34,6 +34,7 @@ def run_benchmarks(
     judge_spec: dict[str, Any] | None = None,
     warmup_queries: int | None = None,
     latency_repetitions: int = 1,
+    max_estimated_cost_usd: float | None = None,
 ) -> dict[str, Any]:
     if top_k is not None and top_k < 1:
         raise ValueError("top_k must be at least 1")
@@ -120,6 +121,7 @@ def run_benchmarks(
                     judge_spec=judge_spec,
                     warmup_queries=warmup_queries,
                     latency_repetitions=latency_repetitions,
+                    max_estimated_cost_usd=max_estimated_cost_usd,
                 )
                 evaluation["index"] = {
                     "build_time_ms": index_time_ms,

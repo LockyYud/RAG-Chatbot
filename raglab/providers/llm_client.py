@@ -95,6 +95,28 @@ def validate_pricing_env() -> None:
         )
 
 
+def _pricing_var_configured(name: str) -> bool:
+    """Whether *name* was explicitly set, as opposed to missing/empty.
+
+    A local or free model can validly declare a $0 rate — that must still
+    count as "pricing configured", distinct from an operator never having set
+    the variable at all. ``env_float``'s default (0.0) cannot make that
+    distinction on its own, so this checks presence directly. A negative rate
+    is rejected outright: cost can never be negative, and letting one through
+    would silently corrupt every downstream total.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return False
+    try:
+        value = float(raw)
+    except ValueError:
+        raise RuntimeError(f"{name} must be numeric, got {raw!r}") from None
+    if value < 0:
+        raise RuntimeError(f"{name} must not be negative, got {value}")
+    return True
+
+
 def check_provider_ready(model: str) -> None:
     """Raise ``RuntimeError`` with a helpful message if the API key for *model* is missing.
 
@@ -194,21 +216,30 @@ class ProviderUsageLedger:
         default_factory=lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     )
     embedding_tokens: int = 0
-    estimated_cost: float = 0.0
-    pricing_configured: bool = False
+    embedding_cost: float = 0.0
+    chat_cost: float = 0.0
+    # Tracked per call-type rather than one shared flag: a run that makes both
+    # embedding and chat calls must have pricing configured for *both* before
+    # its total is trustworthy. Otherwise one priced embedding call marks the
+    # whole run "estimated" while an unpriced chat call silently contributes
+    # $0 — the actual bug this replaced.
+    embedding_pricing_configured: bool = False
+    chat_pricing_configured: bool = False
     retries: int = 0
 
     def to_dict(self) -> dict[str, Any]:
+        embedding_priced = self.embedding_calls == 0 or self.embedding_pricing_configured
+        chat_priced = self.chat_calls == 0 or self.chat_pricing_configured
         return {
             "chat_calls": self.chat_calls,
             "embedding_calls": self.embedding_calls,
             "chat_usage": self.chat_usage,
             "embedding_tokens": self.embedding_tokens,
-            "estimated_cost": round(self.estimated_cost, 8),
+            "embedding_cost": round(self.embedding_cost, 8),
+            "chat_cost": round(self.chat_cost, 8),
+            "estimated_cost": round(self.embedding_cost + self.chat_cost, 8),
             "retries": self.retries,
-            "cost_status": (
-                "estimated" if self.pricing_configured or self.chat_calls + self.embedding_calls == 0 else "unknown"
-            ),
+            "cost_status": "estimated" if embedding_priced and chat_priced else "unknown",
         }
 
 
@@ -261,8 +292,10 @@ class LLMClient:
                 rate = env_float("LLM_EMBEDDING_INPUT_COST_PER_1K", 0.0)
                 ledger.embedding_calls += 1
                 ledger.embedding_tokens += tokens
-                ledger.estimated_cost += tokens / 1000 * rate
-                ledger.pricing_configured = ledger.pricing_configured or rate > 0
+                ledger.embedding_cost += tokens / 1000 * rate
+                ledger.embedding_pricing_configured = ledger.embedding_pricing_configured or _pricing_var_configured(
+                    "LLM_EMBEDDING_INPUT_COST_PER_1K"
+                )
                 ledger.retries += retries
         return vectors
 
@@ -301,9 +334,13 @@ class LLMClient:
             ledger.chat_calls += 1
             for key, value in usage.items():
                 ledger.chat_usage[key] += int(value)
-            ledger.estimated_cost += result.estimated_cost
-            ledger.pricing_configured = ledger.pricing_configured or any(
-                env_float(name, 0.0) > 0 for name in ("LLM_CHAT_INPUT_COST_PER_1K", "LLM_CHAT_OUTPUT_COST_PER_1K")
+            ledger.chat_cost += result.estimated_cost
+            # Both rates must be configured, not just one — a chat call always
+            # spends both prompt and completion tokens, so pricing only one
+            # side still understates the true cost.
+            ledger.chat_pricing_configured = ledger.chat_pricing_configured or (
+                _pricing_var_configured("LLM_CHAT_INPUT_COST_PER_1K")
+                and _pricing_var_configured("LLM_CHAT_OUTPUT_COST_PER_1K")
             )
             ledger.retries += retries
         return result

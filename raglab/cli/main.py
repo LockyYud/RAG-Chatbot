@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from evaluation.runner import run_eval
+from evaluation.runner import BudgetExceededError, run_eval
 from raglab.core.base import (
     BasePipeline,
     get_pipeline_metadata,
@@ -111,6 +111,13 @@ def main() -> None:
     )
     eval_parser.add_argument("--judge", action="store_true", help="Enable OpenAI-compatible LLM-as-judge metrics")
     eval_parser.add_argument("--judge-model", default="gpt-4.1-mini")
+    eval_parser.add_argument(
+        "--max-estimated-cost-usd",
+        type=float,
+        default=None,
+        help="Abort once estimated pipeline+judge cost exceeds this many USD (checked after each query). "
+        "No-op unless pricing env vars are configured for every call type this run makes.",
+    )
 
     compare_parser = subparsers.add_parser("compare", help="Evaluate multiple technique/artifact pairs")
     compare_parser.add_argument("--runs", nargs="+", required=True, help="Items in technique_id=artifact format")
@@ -140,6 +147,14 @@ def main() -> None:
         help="Default 0 unless a suite locks a value; explicit values conflicting with a locked suite are rejected",
     )
     bench_parser.add_argument("--latency-repetitions", type=int, default=1)
+    bench_parser.add_argument(
+        "--max-estimated-cost-usd",
+        type=float,
+        default=None,
+        help="Abort a technique's run once its estimated pipeline+judge cost exceeds this many USD "
+        "(checked after each query, applies per technique). No-op unless pricing env vars are configured "
+        "for every call type that technique's run makes.",
+    )
     bench_parser.add_argument(
         "--preflight",
         action="store_true",
@@ -219,16 +234,20 @@ def main() -> None:
     elif args.command == "eval":
         pipeline = _resolve_artifact_pipeline(args)
         judge_spec = {"type": "openai", "params": {"model": args.judge_model}} if args.judge else None
-        report = run_eval(
-            pipeline,
-            args.artifact,
-            args.dataset,
-            args.output,
-            top_k=args.top_k,
-            mode=args.mode,
-            judge_spec=judge_spec,
-            profile=args.profile,
-        )
+        try:
+            report = run_eval(
+                pipeline,
+                args.artifact,
+                args.dataset,
+                args.output,
+                top_k=args.top_k,
+                mode=args.mode,
+                judge_spec=judge_spec,
+                profile=args.profile,
+                max_estimated_cost_usd=args.max_estimated_cost_usd,
+            )
+        except BudgetExceededError as exc:
+            raise SystemExit(str(exc)) from exc
         _print(report["metrics"])
     elif args.command == "compare":
         _compare(args.runs, args.dataset, args.output, args.top_k)
@@ -378,6 +397,7 @@ def _bench(args: argparse.Namespace) -> None:
             judge_spec={"type": "openai", "params": {"model": args.judge_model}} if args.judge else None,
             warmup_queries=args.warmup_queries,
             latency_repetitions=args.latency_repetitions,
+            max_estimated_cost_usd=args.max_estimated_cost_usd,
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
