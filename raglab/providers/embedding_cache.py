@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,30 @@ from raglab.core.text import normalize_text
 
 DEFAULT_CACHE_DIR = ".raglab_cache"
 CACHE_FILENAME = "embeddings.sqlite"
+
+# Every EmbeddingCache(path) call re-issues "PRAGMA journal_mode=WAL", even
+# though the file is already in WAL mode after the first successful switch.
+# connect(timeout=...) registers a busy handler for ordinary read/write lock
+# waits, but switching (or re-affirming) WAL mode needs a brief exclusive
+# lock that some sqlite3 builds don't retry through that handler when many
+# connections open the same file at once — observed as a real "database is
+# locked" flake under 16 concurrent openers on a CI runner's Python 3.12
+# build, even though the identical stress test never reproduced it locally.
+# Retry the statement explicitly instead of trusting the connection-level
+# timeout alone for this one operation.
+_INIT_RETRY_ATTEMPTS = 10
+_INIT_RETRY_BASE_DELAY = 0.05
+
+
+def _execute_with_retry(conn: sqlite3.Connection, sql: str) -> None:
+    for attempt in range(_INIT_RETRY_ATTEMPTS):
+        try:
+            conn.execute(sql)
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() or attempt + 1 >= _INIT_RETRY_ATTEMPTS:
+                raise
+            time.sleep(_INIT_RETRY_BASE_DELAY * (2**attempt))
 
 
 class EmbeddingCache:
@@ -40,11 +65,12 @@ class EmbeddingCache:
         # vice versa), which is the actual source of most lock contention here
         # — one writer at a time is still serialized, but busy_timeout below
         # covers that remaining case by waiting instead of failing outright.
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA busy_timeout=30000")
-        self._conn.execute(
+        _execute_with_retry(self._conn, "PRAGMA journal_mode=WAL")
+        _execute_with_retry(self._conn, "PRAGMA busy_timeout=30000")
+        _execute_with_retry(
+            self._conn,
             "CREATE TABLE IF NOT EXISTS embeddings ("
-            "cache_key TEXT PRIMARY KEY, model TEXT NOT NULL, vector BLOB NOT NULL, dimension INTEGER NOT NULL)"
+            "cache_key TEXT PRIMARY KEY, model TEXT NOT NULL, vector BLOB NOT NULL, dimension INTEGER NOT NULL)",
         )
 
     @staticmethod
