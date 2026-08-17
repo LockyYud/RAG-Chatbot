@@ -430,6 +430,7 @@ def _run_single_query(
         "amount": pipeline_provider["estimated_cost"],
         "embedding_cost": pipeline_provider["embedding_cost"],
         "chat_cost": pipeline_provider["chat_cost"],
+        "rerank_cost": pipeline_provider["rerank_cost"],
         "basis": "one pipeline request; excludes judge and repeated latency measurements",
         "status": pipeline_provider["cost_status"],
     }
@@ -451,6 +452,7 @@ def _run_single_query(
             "amount": evaluation_provider["estimated_cost"],
             "embedding_cost": evaluation_provider["embedding_cost"],
             "chat_cost": evaluation_provider["chat_cost"],
+            "rerank_cost": evaluation_provider["rerank_cost"],
             "basis": "LLM judge only; excluded from technique cost",
             "status": evaluation_provider["cost_status"],
         }
@@ -781,37 +783,44 @@ def _cost_summary(predictions: list[RAGAnswer]) -> dict[str, Any]:
     pipeline_costs: list[float] = []
     pipeline_embedding_costs: list[float] = []
     pipeline_chat_costs: list[float] = []
+    pipeline_rerank_costs: list[float] = []
     evaluation_costs: list[float] = []
     evaluation_embedding_costs: list[float] = []
     evaluation_chat_costs: list[float] = []
+    evaluation_rerank_costs: list[float] = []
     for prediction in predictions:
         cost = prediction.metadata.get("cost_estimate", {})
         cost = cost if isinstance(cost, dict) else {}
         pipeline_costs.append(float(cost.get("amount", 0.0)))
         pipeline_embedding_costs.append(float(cost.get("embedding_cost", 0.0)))
         pipeline_chat_costs.append(float(cost.get("chat_cost", 0.0)))
+        pipeline_rerank_costs.append(float(cost.get("rerank_cost", 0.0)))
         evaluation_cost = prediction.metadata.get("evaluation_cost_estimate", {})
         evaluation_cost = evaluation_cost if isinstance(evaluation_cost, dict) else {}
         evaluation_costs.append(float(evaluation_cost.get("amount", 0.0)))
         evaluation_embedding_costs.append(float(evaluation_cost.get("embedding_cost", 0.0)))
         evaluation_chat_costs.append(float(evaluation_cost.get("chat_cost", 0.0)))
+        evaluation_rerank_costs.append(float(evaluation_cost.get("rerank_cost", 0.0)))
     return {
         "currency": "USD",
-        # pipeline_cost / judge_cost separate embedding vs chat spend so a
-        # technique that is expensive because of retrieval-time LLM calls
-        # (HyDE, RAG-Fusion) is distinguishable from one expensive because of
-        # generation, and judge spend never gets folded into technique cost.
+        # pipeline_cost / judge_cost separate embedding vs chat vs rerank spend
+        # so a technique that is expensive because of retrieval-time LLM calls
+        # (HyDE, RAG-Fusion) or an API cross-encoder (reranker_backend="api")
+        # is distinguishable from one expensive because of generation, and
+        # judge spend never gets folded into technique cost.
         "pipeline_cost": {
             "total": round(sum(pipeline_costs), 8),
             "avg": round(sum(pipeline_costs) / len(pipeline_costs), 8) if pipeline_costs else 0.0,
             "embedding_cost_total": round(sum(pipeline_embedding_costs), 8),
             "chat_cost_total": round(sum(pipeline_chat_costs), 8),
+            "rerank_cost_total": round(sum(pipeline_rerank_costs), 8),
         },
         "judge_cost": {
             "total": round(sum(evaluation_costs), 8),
             "avg": round(sum(evaluation_costs) / len(evaluation_costs), 8) if evaluation_costs else 0.0,
             "embedding_cost_total": round(sum(evaluation_embedding_costs), 8),
             "chat_cost_total": round(sum(evaluation_chat_costs), 8),
+            "rerank_cost_total": round(sum(evaluation_rerank_costs), 8),
         },
         # Back-compatible flat aliases for existing readers.
         "total_estimated_cost": round(sum(pipeline_costs), 8),

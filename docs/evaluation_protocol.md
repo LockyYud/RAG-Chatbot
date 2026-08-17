@@ -72,6 +72,12 @@ Benchmark runs additionally write `summary.json`, `summary.csv`, and `summary.md
 `chat_cost_total` — a technique that is expensive because of retrieval-time LLM calls (HyDE, RAG-Fusion) is
 distinguishable from one expensive because of generation, and judge spend never gets folded into technique cost.
 
+A technique using an API-backed cross-encoder (`reranker_backend="api"` — see below) additionally reports
+`rerank_calls`/`rerank_cost`, priced with a flat `LLM_RERANK_COST_PER_CALL` (most hosted rerank APIs bill per
+search unit, not per token, so this isn't a per-1k-token rate like the others). A run with zero rerank calls
+is unaffected — `rerank_priced` defaults to true when `rerank_calls == 0`, so `backend="local"` runs never see
+their `cost_status` change.
+
 Each prediction's `cost_estimate.status` (and `evaluation_cost_estimate.status` for the judge) is `"estimated"` only
 when *every* call type that run actually used — embedding, chat, or both — had its pricing env vars **configured**.
 "Configured" means the variable is explicitly set, including `0` for a free/local model — it is distinct from the
@@ -118,6 +124,25 @@ requested without `faiss` installed (`pip install '.[vector]'`), and `claim_elig
 rejects any completed run whose actual (post-ingest) node count crossed the threshold but whose manifest records
 a backend other than `faiss_local` — catching the case where the environment silently never engaged faiss.
 `smoke_only`/`exploratory` tiers keep the plain silent fallback.
+
+## Cross-encoder reranker backend
+
+`bm25_hybrid_rerank`, `contextual_retrieval_2024`, and `agentic_rag_arag` all rerank their candidate pool with
+`CrossEncoderReranker`, chosen with `reranker_backend`:
+
+- `"local"` (default): a `sentence-transformers` model (`reranker_model`, e.g.
+  `cross-encoder/ms-marco-MiniLM-L-6-v2`) loaded once in `load()`. Needs the `[rerank]` extra installed; no
+  network call at query time, no per-call cost.
+- `"api"`: a hosted rerank endpoint called once per query via litellm (`reranker_model` becomes e.g.
+  `cohere/rerank-english-v3.0` or `jina_ai/jina-reranker-v2-base-multilingual`). No local model/GPU needed;
+  costs a network round trip and (optionally) money per query — see `LLM_RERANK_COST_PER_CALL` above.
+
+Both backends degrade to `LexicalOverlapReranker` when unavailable/failing **and** `allow_fallback=True` is set
+(same as before this option existed); with the default `allow_fallback=False`, a missing local model or a
+failed API call raises instead of silently substituting a weaker reranker — the same strict-by-default
+philosophy as the FAISS/embedding-cache backend choices above. `raglab doctor` checks readiness for whichever
+backend is configured: `sentence-transformers` importability for `"local"`, the provider API key
+(`check_provider_ready(reranker_model)`) for `"api"`.
 
 ## Concurrent quality pass and sequential latency pass
 

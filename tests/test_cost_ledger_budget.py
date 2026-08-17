@@ -144,6 +144,65 @@ def test_negative_rate_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
             client.create_embeddings("fake-embed", ["a"])
 
 
+class _FakeRerankResponse:
+    def __init__(self, results: list[dict[str, Any]]) -> None:
+        self.results = results
+
+
+def test_rerank_cost_appears_in_report_cost_estimate_and_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: ProviderUsageLedger.to_dict()["estimated_cost"] already included
+    rerank_cost (so the budget guard was never wrong), but evaluation/runner.py's
+    per-prediction cost_estimate/evaluation_cost_estimate and the report-level
+    cost_summary only ever copied embedding_cost/chat_cost — silently dropping
+    rerank spend from the report even though the total was correct. This made "how
+    much did the API cross-encoder cost" unanswerable from the report alone.
+    """
+
+    def fake_embedding(model: str, input: list[str], timeout: float) -> Any:
+        return SimpleNamespace(data=[{"index": i, "embedding": [0.1, 0.2]} for i in range(len(input))])
+
+    def fake_rerank(model: str, query: str, documents: list[str], top_n: int, timeout: float) -> Any:
+        return _FakeRerankResponse([{"index": i, "relevance_score": 1.0} for i in range(len(documents))])
+
+    monkeypatch.setattr(
+        "raglab.providers.llm_client._litellm",
+        lambda: SimpleNamespace(embedding=fake_embedding, rerank=fake_rerank),
+    )
+    monkeypatch.setattr("raglab.providers.llm_client.check_provider_ready", lambda model: None)
+    monkeypatch.setenv("LLM_RERANK_COST_PER_CALL", "0.01")
+    monkeypatch.setenv("LLM_EMBEDDING_INPUT_COST_PER_1K", "0")
+
+    artifact = tmp_path / "artifact"
+    params = {"reranker_backend": "api", "reranker_model": "cohere/rerank-english-v3.0"}
+    ingest_pipeline = load_pipeline("bm25_hybrid_rerank", params=params)
+    assert ingest_pipeline is not None
+    ingest_pipeline.ingest("datasets/sample/docs", str(artifact))
+
+    query_pipeline = load_pipeline("bm25_hybrid_rerank", params=params)
+    assert query_pipeline is not None
+    output_path = tmp_path / "eval.json"
+
+    report = run_eval(
+        query_pipeline,
+        str(artifact),
+        "datasets/sample/qa.jsonl",
+        str(output_path),
+        mode="retrieval_only",
+    )
+
+    for prediction in report["predictions"]:
+        assert prediction["metadata"]["cost_estimate"]["rerank_cost"] == pytest.approx(0.01)
+    query_count = len(report["predictions"])
+    assert report["cost_summary"]["pipeline_cost"]["rerank_cost_total"] == pytest.approx(0.01 * query_count)
+    assert report["cost_summary"]["pipeline_cost"]["total"] == pytest.approx(
+        report["cost_summary"]["pipeline_cost"]["rerank_cost_total"]
+        + report["cost_summary"]["pipeline_cost"]["embedding_cost_total"]
+        + report["cost_summary"]["pipeline_cost"]["chat_cost_total"]
+    )
+
+
 def test_budget_guard_stops_run_and_preserves_completed_checkpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

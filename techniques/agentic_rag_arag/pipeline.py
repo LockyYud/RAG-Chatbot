@@ -31,7 +31,7 @@ structured trace (steps, tools, subqueries, evidence) for failure analysis.
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Literal
 
 from raglab.core.base import BasePipeline
 from raglab.core.io import iter_input_files
@@ -43,7 +43,7 @@ from raglab.indexing.retrievers import BM25Retriever, DenseRetriever, RRFHybridR
 from raglab.inference.context_builders.citation_context import CitationContextBuilder
 from raglab.inference.controllers.agentic import AgenticRetrievalController, Tool, make_llm_policy
 from raglab.inference.generators.chat import ChatGenerator
-from raglab.inference.rerankers.cross_encoder import CrossEncoderReranker
+from raglab.inference.rerankers.cross_encoder import CrossEncoderReranker, effective_reranker_name
 from raglab.inference.verifiers.citation_coverage import CitationCoverageVerifier
 from raglab.processing.chunkers.recursive import RecursiveChunker
 from raglab.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
@@ -79,6 +79,7 @@ class AgenticRAGPipeline(BasePipeline):
             "rrf_k",
             "rerank_top_k",
             "reranker_model",
+            "reranker_backend",
             "max_context_tokens",
             "allow_fallback",
         }
@@ -102,6 +103,7 @@ class AgenticRAGPipeline(BasePipeline):
         rrf_k: float = 60.0,
         rerank_top_k: int = 6,
         reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        reranker_backend: Literal["local", "api"] = "local",
         max_context_tokens: int = 2200,
         allow_fallback: bool = False,
     ) -> None:
@@ -118,6 +120,7 @@ class AgenticRAGPipeline(BasePipeline):
         self.rrf_k = rrf_k
         self.rerank_top_k = rerank_top_k
         self.reranker_model = reranker_model
+        self.reranker_backend = reranker_backend
         self.max_context_tokens = max_context_tokens
         self.allow_fallback = allow_fallback
 
@@ -165,12 +168,15 @@ class AgenticRAGPipeline(BasePipeline):
         # The agent itself is an LLM, so a chat model is required in both modes.
         check_provider_ready(self.embedding_model)
         check_provider_ready(self.agent_model)
+        check_provider_ready(self.reranker_model)
         manifest, nodes = self.load_artifact(artifact_path)
         vector_store = load_vector_store(artifact_path, nodes)
         self._tools = self._build_tools(nodes, vector_store)
         # Shared cross-encoder loaded once — reused across the agent's evidence
         # rerank on every query, not reloaded per question.
-        self._reranker = CrossEncoderReranker(model=self.reranker_model, strict=not self.allow_fallback)
+        self._reranker = CrossEncoderReranker(
+            model=self.reranker_model, strict=not self.allow_fallback, backend=self.reranker_backend
+        )
         self._mark_loaded(artifact_path, manifest, nodes)
 
     def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
@@ -227,7 +233,7 @@ class AgenticRAGPipeline(BasePipeline):
         answer.metadata["components"] = {
             "retriever": "agentic_multi_tool",
             "requested_reranker": self.reranker_model,
-            "effective_reranker": self.reranker_model if reranker.available else "lexical_overlap_fallback",
+            "effective_reranker": effective_reranker_name(reranker, reranked),
             "generator": self.generator_model if mode == "full_rag" else None,
             "verifier": "citation_coverage" if mode == "full_rag" else None,
         }

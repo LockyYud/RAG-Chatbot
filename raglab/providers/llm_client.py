@@ -64,9 +64,13 @@ _KEY_REQUIREMENTS: list[tuple[tuple[str, ...], str | None]] = [
     (("claude-", "anthropic/"), "ANTHROPIC_API_KEY"),
     (("gemini/", "gemini-"), "GEMINI_API_KEY"),
     (("groq/",), "GROQ_API_KEY"),
-    (("together/",), "TOGETHER_API_KEY"),
+    (("together/", "together_ai/"), "TOGETHER_API_KEY"),
     (("ollama/", "ollama_chat/"), None),  # local, no key
     (("openrouter/",), "OPENROUTER_API_KEY"),
+    # Rerank-only providers (litellm.rerank) — never used for chat/embedding models.
+    (("cohere/",), "COHERE_API_KEY"),
+    (("jina_ai/", "jina/"), "JINA_AI_API_KEY"),
+    (("azure_ai/",), "AZURE_AI_API_KEY"),
 ]
 
 # Renamed for provider-neutral pricing (litellm supports many providers, not
@@ -229,10 +233,14 @@ class ProviderUsageLedger:
     retries: int = 0
     embedding_cache_hits: int = 0
     embedding_cache_misses: int = 0
+    rerank_calls: int = 0
+    rerank_cost: float = 0.0
+    rerank_pricing_configured: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         embedding_priced = self.embedding_calls == 0 or self.embedding_pricing_configured
         chat_priced = self.chat_calls == 0 or self.chat_pricing_configured
+        rerank_priced = self.rerank_calls == 0 or self.rerank_pricing_configured
         return {
             "chat_calls": self.chat_calls,
             "embedding_calls": self.embedding_calls,
@@ -240,11 +248,13 @@ class ProviderUsageLedger:
             "embedding_tokens": self.embedding_tokens,
             "embedding_cost": round(self.embedding_cost, 8),
             "chat_cost": round(self.chat_cost, 8),
-            "estimated_cost": round(self.embedding_cost + self.chat_cost, 8),
+            "rerank_calls": self.rerank_calls,
+            "rerank_cost": round(self.rerank_cost, 8),
+            "estimated_cost": round(self.embedding_cost + self.chat_cost + self.rerank_cost, 8),
             "retries": self.retries,
             "embedding_cache_hits": self.embedding_cache_hits,
             "embedding_cache_misses": self.embedding_cache_misses,
-            "cost_status": "estimated" if embedding_priced and chat_priced else "unknown",
+            "cost_status": "estimated" if embedding_priced and chat_priced and rerank_priced else "unknown",
         }
 
 
@@ -379,6 +389,37 @@ class LLMClient:
             )
             ledger.retries += retries
         return result
+
+    # ── Reranking ────────────────────────────────────────────────────────────
+
+    def create_rerank(self, model: str, query: str, documents: list[str], top_n: int) -> list[tuple[int, float]]:
+        """Score *documents* against *query* via a hosted rerank API (litellm.rerank).
+
+        Returns ``(original_index, relevance_score)`` pairs, already sorted by
+        relevance descending — the same shape :class:`CrossEncoderReranker`
+        needs to re-attach scores to its ``RetrievalResult`` list. This is the
+        API-backed alternative to loading a local ``sentence-transformers``
+        cross-encoder: use it (``cohere/rerank-english-v3.0``,
+        ``jina_ai/jina-reranker-v2-base-multilingual``, ...) when a local model
+        download/GPU isn't wanted or available.
+        """
+        litellm = _litellm()
+        response, retries = _call_with_retry(
+            functools.partial(
+                litellm.rerank, model=model, query=query, documents=documents, top_n=top_n, timeout=self.timeout
+            )
+        )
+        results = response.results or []
+        ledger = _ACTIVE_LEDGER.get()
+        if ledger is not None:
+            ledger.rerank_calls += 1
+            rate = env_float("LLM_RERANK_COST_PER_CALL", 0.0)
+            ledger.rerank_cost += rate
+            ledger.rerank_pricing_configured = ledger.rerank_pricing_configured or _pricing_var_configured(
+                "LLM_RERANK_COST_PER_CALL"
+            )
+            ledger.retries += retries
+        return [(int(item["index"]), float(item["relevance_score"])) for item in results]
 
 
 # ─── Internal helpers ─────────────────────────────────────────────────────────

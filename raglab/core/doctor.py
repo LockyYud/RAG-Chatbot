@@ -44,14 +44,26 @@ def diagnose_technique(pipeline: BasePipeline, mode: str = "full_rag") -> dict[s
         else:
             checks.append({"name": attribute, "status": "ok", "detail": model})
     if hasattr(pipeline, "reranker_model"):
-        available = importlib.util.find_spec("sentence_transformers") is not None
-        checks.append(
-            {
-                "name": "cross_encoder",
-                "status": "ok" if available else "failed",
-                "detail": "sentence-transformers installed" if available else "install the [rerank] extra",
-            }
-        )
+        if getattr(pipeline, "reranker_backend", "local") == "api":
+            try:
+                from raglab.providers.llm_client import check_provider_ready
+
+                check_provider_ready(pipeline.reranker_model)
+            except RuntimeError as exc:
+                checks.append({"name": "cross_encoder", "status": "failed", "detail": str(exc)})
+            else:
+                checks.append(
+                    {"name": "cross_encoder", "status": "ok", "detail": f"api reranker: {pipeline.reranker_model}"}
+                )
+        else:
+            available = importlib.util.find_spec("sentence_transformers") is not None
+            checks.append(
+                {
+                    "name": "cross_encoder",
+                    "status": "ok" if available else "failed",
+                    "detail": "sentence-transformers installed" if available else "install the [rerank] extra",
+                }
+            )
     return {
         "technique": pipeline.id,
         "mode": mode,

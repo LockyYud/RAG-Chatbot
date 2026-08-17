@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
-from typing import Any
+from typing import Any, Literal
 
 from raglab.core.base import BasePipeline
 from raglab.core.io import iter_input_files
@@ -44,7 +44,7 @@ from raglab.indexing.embeddings import Embedder
 from raglab.indexing.retrievers import RRFHybridRetriever
 from raglab.inference.context_builders.citation_context import CitationContextBuilder
 from raglab.inference.generators.chat import ChatGenerator
-from raglab.inference.rerankers.cross_encoder import CrossEncoderReranker
+from raglab.inference.rerankers.cross_encoder import CrossEncoderReranker, effective_reranker_name
 from raglab.inference.verifiers.citation_coverage import CitationCoverageVerifier
 from raglab.processing.chunkers.recursive import RecursiveChunker
 from raglab.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
@@ -78,6 +78,7 @@ class ContextualRetrievalPipeline(BasePipeline):
             "candidate_k",
             "rerank_top_k",
             "reranker_model",
+            "reranker_backend",
             "max_context_tokens",
             "allow_fallback",
         }
@@ -101,6 +102,7 @@ class ContextualRetrievalPipeline(BasePipeline):
         candidate_k: int = 30,
         rerank_top_k: int = 6,
         reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        reranker_backend: Literal["local", "api"] = "local",
         max_context_tokens: int = 2200,
         allow_fallback: bool = False,
     ) -> None:
@@ -117,6 +119,7 @@ class ContextualRetrievalPipeline(BasePipeline):
         self.candidate_k = candidate_k
         self.rerank_top_k = rerank_top_k
         self.reranker_model = reranker_model
+        self.reranker_backend = reranker_backend
         self.max_context_tokens = max_context_tokens
         self.allow_fallback = allow_fallback
 
@@ -181,6 +184,7 @@ class ContextualRetrievalPipeline(BasePipeline):
         from raglab.providers.llm_client import check_provider_ready
 
         check_provider_ready(self.embedding_model)
+        check_provider_ready(self.reranker_model)
         manifest, nodes = self.load_artifact(artifact_path)
         vector_store = load_vector_store(artifact_path, nodes)
         # 1. Hybrid retrieve over the contextualized index (BM25 + dense, RRF fused).
@@ -191,8 +195,10 @@ class ContextualRetrievalPipeline(BasePipeline):
             candidate_k=self.candidate_k,
             embedding_model=self.embedding_model,
         )
-        # 2. Cross-encoder rerank (lexical fallback when the extra is absent).
-        self._reranker = CrossEncoderReranker(model=self.reranker_model, strict=not self.allow_fallback)
+        # 2. Cross-encoder rerank (lexical fallback when the backend is unavailable/fails).
+        self._reranker = CrossEncoderReranker(
+            model=self.reranker_model, strict=not self.allow_fallback, backend=self.reranker_backend
+        )
         self._mark_loaded(artifact_path, manifest, nodes)
 
     def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
@@ -232,7 +238,7 @@ class ContextualRetrievalPipeline(BasePipeline):
         answer.metadata["components"] = {
             "retriever": "contextual_bm25_dense_rrf",
             "requested_reranker": self.reranker_model,
-            "effective_reranker": self.reranker_model if reranker.available else "lexical_overlap_fallback",
+            "effective_reranker": effective_reranker_name(reranker, reranked),
             "generator": self.generator_model if mode == "full_rag" else None,
             "verifier": "citation_coverage" if mode == "full_rag" else None,
         }

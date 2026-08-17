@@ -67,6 +67,15 @@ All three methods must use the shared contracts:
 - `retrieval_only` performs retrieval/context construction only and returns `skipped_verification()`.
 - Public citations are canonical document IDs; `[C1]` markers are prompt-local identifiers.
 - Learned rerankers fail in strict mode. Demo fallback must be explicitly enabled and reported as the effective component.
+- `CrossEncoderReranker` (`raglab/inference/rerankers/cross_encoder.py`) supports two backends:
+  `backend="local"` (default, a `sentence-transformers` model loaded once in `load()`) or
+  `backend="api"` (a hosted rerank endpoint called per query via `LLMClient.create_rerank()`,
+  e.g. `model="cohere/rerank-english-v3.0"`). A technique exposing this choice should declare a
+  `reranker_backend` constructor attribute (query-overridable, same as `reranker_model`) and call
+  `check_provider_ready(self.reranker_model)` in `load()` unconditionally — it is a no-op for a
+  local model id (unknown prefix) and required for an API model id. `raglab doctor` checks
+  `sentence-transformers` availability for `backend="local"` or the provider API key for
+  `backend="api"` automatically once the pipeline has a `reranker_model` attribute.
 - If a technique calls a chat model during retrieval itself (not just full-RAG answer synthesis — e.g. HyDE, RAG-Fusion),
   declare those constructor attribute names in `retrieval_time_models` so `doctor`/preflight require that provider key
   even in `retrieval_only` mode.

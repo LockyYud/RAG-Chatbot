@@ -311,8 +311,9 @@ Retrieval, reranking and orchestration components (reusable across techniques):
   `DenseRetriever` with Reciprocal Rank Fusion (rank-based, no score-scale tuning).
   `reciprocal_rank_fusion()` is exposed as a pure helper.
 - `CrossEncoderReranker` (`raglab/inference/rerankers/cross_encoder.py`): precision
-  reranking via a `sentence-transformers` cross-encoder. Evaluation and benchmark
-  runs are strict; interactive query fallback requires `--allow-fallback` and is recorded in metadata.
+  reranking via a `sentence-transformers` cross-encoder (`reranker_backend="local"`, default) or a hosted
+  rerank API via litellm (`reranker_backend="api"`, e.g. `cohere/rerank-english-v3.0`). Evaluation and
+  benchmark runs are strict; interactive query fallback requires `--allow-fallback` and is recorded in metadata.
 - `ContextualEnricher` (`raglab/processing/enrichers/contextual.py`): prepends an
   LLM-generated, document-aware context to each chunk's index text (Anthropic's
   Contextual Embeddings + Contextual BM25 in one step).

@@ -28,15 +28,21 @@ Implementation notes
 ---------------------
 - Requires embeddings (same as ``rag_sequence_2020`` / ``naive_rag``): the dense
   half of the hybrid needs vectors saved at ingest.
-- The cross-encoder uses ``sentence-transformers`` when the ``rerank`` extra is
-  installed; otherwise it degrades to lexical-overlap reranking so the technique
-  still runs offline.  Check ``retrieval_runtime`` / per-result metadata to see
-  which path ran.
+- The cross-encoder defaults to ``reranker_backend="local"`` (a
+  ``sentence-transformers`` model loaded once in ``load()`` when the
+  ``rerank`` extra is installed); set ``reranker_backend="api"`` with a
+  litellm rerank model id (e.g. ``cohere/rerank-english-v3.0``,
+  ``jina_ai/jina-reranker-v2-base-multilingual``) to call a hosted rerank API
+  per query instead of loading a local model. Either backend degrades to
+  lexical-overlap reranking when unavailable/failing *and* ``allow_fallback``
+  is set, so the technique still runs offline. Check ``retrieval_runtime`` /
+  per-result metadata to see which path ran.
 """
 
 from __future__ import annotations
 
 import time
+from typing import Literal
 
 from raglab.core.base import BasePipeline
 from raglab.core.io import iter_input_files
@@ -47,7 +53,7 @@ from raglab.indexing.embeddings import Embedder
 from raglab.indexing.retrievers import RRFHybridRetriever
 from raglab.inference.context_builders.citation_context import CitationContextBuilder
 from raglab.inference.generators.chat import ChatGenerator
-from raglab.inference.rerankers.cross_encoder import CrossEncoderReranker
+from raglab.inference.rerankers.cross_encoder import CrossEncoderReranker, effective_reranker_name
 from raglab.inference.verifiers.citation_coverage import CitationCoverageVerifier
 from raglab.processing.chunkers.recursive import RecursiveChunker
 from raglab.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
@@ -81,6 +87,7 @@ class BM25HybridRerankPipeline(BasePipeline):
             "candidate_k",
             "rerank_top_k",
             "reranker_model",
+            "reranker_backend",
             "max_context_tokens",
             "allow_fallback",
         }
@@ -102,6 +109,7 @@ class BM25HybridRerankPipeline(BasePipeline):
         candidate_k: int = 30,
         rerank_top_k: int = 6,
         reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        reranker_backend: Literal["local", "api"] = "local",
         max_context_tokens: int = 2200,
         allow_fallback: bool = False,
     ) -> None:
@@ -116,6 +124,7 @@ class BM25HybridRerankPipeline(BasePipeline):
         self.candidate_k = candidate_k
         self.rerank_top_k = rerank_top_k
         self.reranker_model = reranker_model
+        self.reranker_backend = reranker_backend
         self.max_context_tokens = max_context_tokens
         self.allow_fallback = allow_fallback
 
@@ -165,6 +174,9 @@ class BM25HybridRerankPipeline(BasePipeline):
         from raglab.providers.llm_client import check_provider_ready
 
         check_provider_ready(self.embedding_model)
+        # No-op for a local sentence-transformers model id (unknown prefix);
+        # required when reranker_backend="api" (e.g. "cohere/rerank-...").
+        check_provider_ready(self.reranker_model)
         manifest, nodes = self.load_artifact(artifact_path)
         vector_store = load_vector_store(artifact_path, nodes)
         # 1. Hybrid retrieve: BM25 + dense, fused by RRF (rank-based, no alpha).
@@ -176,10 +188,13 @@ class BM25HybridRerankPipeline(BasePipeline):
             embedding_model=self.embedding_model,
         )
         # 2. Cross-encoder rerank the fused pool for precision (lexical fallback
-        #    when sentence-transformers is not installed). Loading the model
+        #    when the backend is unavailable/fails). Loading the local model
         #    here instead of per-query is the main win: strict-mode CI/eval
         #    would otherwise reload a sentence-transformers model per question.
-        self._reranker = CrossEncoderReranker(model=self.reranker_model, strict=not self.allow_fallback)
+        #    reranker_backend="api" defers all work to a per-query call instead.
+        self._reranker = CrossEncoderReranker(
+            model=self.reranker_model, strict=not self.allow_fallback, backend=self.reranker_backend
+        )
         self._mark_loaded(artifact_path, manifest, nodes)
 
     def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
@@ -219,7 +234,7 @@ class BM25HybridRerankPipeline(BasePipeline):
         answer.metadata["components"] = {
             "retriever": "bm25_dense_rrf",
             "requested_reranker": self.reranker_model,
-            "effective_reranker": self.reranker_model if reranker.available else "lexical_overlap_fallback",
+            "effective_reranker": effective_reranker_name(reranker, reranked),
             "generator": self.generator_model if mode == "full_rag" else None,
             "verifier": "citation_coverage" if mode == "full_rag" else None,
         }
