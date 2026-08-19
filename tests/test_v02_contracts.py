@@ -7,15 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from evaluation.metrics import evaluate_predictions
-from evaluation.runner import run_eval
-from raglab.benchmarks.experiments import run_experiment_matrix
-from raglab.benchmarks.runner import _matching_report, has_failed_runs
-from raglab.cli.main import _compare
-from raglab.core.base import get_pipeline_spec, load_pipeline, load_pipeline_for_artifact
-from raglab.core.measure import canonical_fingerprint
-from raglab.core.schema import BuiltContext, EvalItem, RAGAnswer, RetrievalResult
-from raglab.datasets.schema import (
+from ragbench.benchmarks.experiments import run_experiment_matrix
+from ragbench.benchmarks.runner import _matching_report, has_failed_runs
+from ragbench.cli.main import _compare
+from ragbench.core.base import get_pipeline_spec, load_pipeline, load_pipeline_for_artifact
+from ragbench.core.measure import canonical_fingerprint
+from ragbench.core.schema import BuiltContext, Citation, EvalItem, RAGAnswer, RetrievalResult
+from ragbench.datasets.schema import (
     DocumentRecord,
     PreparedDataset,
     QrelRecord,
@@ -24,8 +22,10 @@ from raglab.datasets.schema import (
     validate_processed_dataset,
     write_prepared_dataset,
 )
-from raglab.inference.generators.chat import ChatGenerator
-from raglab.providers.llm_client import ChatCompletionResult
+from ragbench.evaluation.metrics import evaluate_predictions
+from ragbench.evaluation.runner import run_eval
+from ragbench.inference.generators.chat import ChatGenerator
+from ragbench.providers.llm_client import ChatCompletionResult
 
 
 def test_artifact_config_is_source_of_truth(tmp_path: Path) -> None:
@@ -34,7 +34,7 @@ def test_artifact_config_is_source_of_truth(tmp_path: Path) -> None:
     assert pipeline is not None
     manifest = pipeline.ingest("datasets/sample/docs", str(artifact))
 
-    assert manifest["artifact_version"] == "4"
+    assert manifest["artifact_version"] == "5"
     assert manifest["pipeline"]["config"]["child_size"] == 77
     assert manifest["pipeline"]["config_fingerprint"].startswith("sha256:")
 
@@ -59,7 +59,7 @@ def test_direct_query_rejects_locked_config_drift(tmp_path: Path) -> None:
 
 
 def test_self_rag_retrieval_only_does_not_touch_llm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import techniques.self_rag_2023.pipeline as self_rag_module
+    import ragbench.techniques.self_rag_2023.pipeline as self_rag_module
 
     artifact = tmp_path / "artifact"
     pipeline = load_pipeline("self_rag_2023")
@@ -83,7 +83,7 @@ def test_metrics_exclude_unanswerable_from_retrieval_denominator() -> None:
         EvalItem("unanswerable", "Q2", metadata={"is_answerable": False}),
     ]
     predictions = [
-        RAGAnswer("Q1", "A", [result], citations=["d1"]),
+        RAGAnswer("Q1", "A", [result], citations=[Citation(citation_id="C1", doc_id="d1", chunk_id="c1")]),
         RAGAnswer("Q2", "Không đủ bằng chứng", [], abstained=True),
     ]
     metrics = evaluate_predictions(items, predictions)
@@ -156,7 +156,7 @@ def test_dataset_overwrite_removes_stale_docs_and_sampling_is_seeded(tmp_path: P
 
 def test_technique_discovery_works_outside_checkout(tmp_path: Path) -> None:
     completed = subprocess.run(
-        [sys.executable, "-m", "raglab.cli.main", "techniques", "list"],
+        [sys.executable, "-m", "ragbench.cli.main", "techniques", "list"],
         cwd=tmp_path,
         check=True,
         capture_output=True,
@@ -267,7 +267,8 @@ def test_technique_spec_and_artifact_provenance_are_machine_readable(tmp_path: P
     artifact = tmp_path / "artifact"
     pipeline.ingest("datasets/sample/docs", str(artifact))
     manifest, _ = pipeline.load_artifact(str(artifact))
-    assert manifest["runtime"]["source_fingerprint"].startswith("sha256:")
+    assert manifest["runtime"]["ingest_fingerprint"].startswith("sha256:")
+    assert manifest["runtime"]["runtime_fingerprint"].startswith("sha256:")
     assert "nodes.json" in manifest["extra"]["artifact_files"]
 
 

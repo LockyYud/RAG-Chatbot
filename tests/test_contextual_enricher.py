@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from raglab.core.schema import Chunk
-from raglab.processing.enrichers.contextual import ContextualEnricher
+from ragbench.core.schema import Chunk
+from ragbench.processing.enrichers.contextual import ContextualEnricher
 
 
 def _chunk(chunk_id: str, doc_id: str, text: str, **metadata: object) -> Chunk:

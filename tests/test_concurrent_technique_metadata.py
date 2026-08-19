@@ -9,8 +9,8 @@ from unittest import mock
 
 import pytest
 
-import raglab.inference.context_builders.citation_context as citation_context_module
-from raglab.core.base import load_pipeline
+import ragbench.inference.context_builders.citation_context as citation_context_module
+from ragbench.core.base import load_pipeline
 
 QUESTION_A = "Điều kiện xét tuyển ngành trí tuệ nhân tạo là gì?"
 QUESTION_B = "Hồ sơ đăng ký xét tuyển gồm những giấy tờ nào?"
@@ -58,7 +58,7 @@ def _make_marker_completion(text_builder: Any):
 def _run_ingest(technique_id: str, params: dict[str, Any], artifact: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     # ingest() never calls create_chat_completion for these techniques — only embed_nodes.
     monkeypatch.setattr(
-        "raglab.providers.llm_client._litellm",
+        "ragbench.providers.llm_client._litellm",
         lambda: SimpleNamespace(embedding=_fake_embedding, completion=None),
     )
     pipeline = load_pipeline(technique_id, params=params)
@@ -117,7 +117,7 @@ def _run_forced_interleave(pipeline: Any) -> tuple[Any, Any]:
 
 @pytest.fixture(autouse=True)
 def _no_provider_checks():
-    with mock.patch("raglab.providers.llm_client.check_provider_ready", lambda model: None):
+    with mock.patch("ragbench.providers.llm_client.check_provider_ready", lambda model: None):
         yield
 
 
@@ -126,14 +126,14 @@ def test_hyde_concurrent_queries_do_not_cross_contaminate_retrieval_metadata(
 ) -> None:
     """Regression test: HyDERetriever used to write self.last_metadata inside
     retrieve() and have the pipeline read it back afterward. Two concurrent
-    query() calls on the same shared, already-loaded pipeline (raglab
+    query() calls on the same shared, already-loaded pipeline (ragbench
     eval/bench --concurrency) could interleave in that window, silently
     attaching one question's runtime metadata to a different question's answer."""
     artifact = tmp_path / "artifact"
     query_pipeline = _run_ingest("hyde_2022", {"hyde_samples": 1}, artifact, monkeypatch)
 
     monkeypatch.setattr(
-        "raglab.providers.llm_client._litellm",
+        "ragbench.providers.llm_client._litellm",
         lambda: SimpleNamespace(
             embedding=_fake_embedding,
             completion=_make_marker_completion(lambda q: f"HYPO_DOC_MARKER::{q}"),
@@ -154,7 +154,7 @@ def test_rag_fusion_concurrent_queries_do_not_cross_contaminate_retrieval_metada
     query_pipeline = _run_ingest("rag_fusion_2024", {"fusion_queries": 1}, artifact, monkeypatch)
 
     monkeypatch.setattr(
-        "raglab.providers.llm_client._litellm",
+        "ragbench.providers.llm_client._litellm",
         lambda: SimpleNamespace(
             embedding=_fake_embedding,
             completion=_make_marker_completion(lambda q: f"ALT_QUERY_MARKER::{q}"),

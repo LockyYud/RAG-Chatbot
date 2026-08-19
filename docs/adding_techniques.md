@@ -17,19 +17,19 @@ Copy `techniques/_template`, set an implementation level (`faithful_reproduction
 
 Declare `capabilities.evaluation_profiles` in `technique.yaml` (`retrieval`, `single_hop_rag`,
 `multi_hop_rag`, and/or `citation_rag`) and whether the technique writes `custom_artifacts`. Run
-`raglab doctor --technique <id>` before a provider-dependent benchmark.
+`ragbench doctor --technique <id>` before a provider-dependent benchmark.
 
 Every constructor parameter must be assigned to an attribute with the same name so `resolved_config()` can persist the
-complete configuration in artifact v4. Declare `query_override_fields` explicitly. Only fields that do not change the
+complete configuration in artifact v5. Declare `query_override_fields` explicitly. Only fields that do not change the
 persisted index belong there; embedding model, chunking, enrichment, and store parameters must remain locked.
 
 All three methods must use the shared contracts:
 
-- `ingest()` calls `build_ingest_manifest(..., pipeline_config=self.resolved_config())` and saves artifact v4.
+- `ingest()` calls `build_ingest_manifest(..., pipeline_config=self.resolved_config())` and saves artifact v5.
 - Custom index state (for example a graph, tree, or token index) is written under the artifact directory before
-  `save_nodes()`; v4 records and validates checksums for every file in that bundle.
+  `save_nodes()`; v5 records and validates checksums for every file in that bundle.
 - If the technique embeds nodes, pass `store_backend=default_store_backend(len(nodes), has_embeddings=True)`
-  (`raglab.indexing.artifacts`) to `build_ingest_manifest(...)` and `store_spec={"type": store_backend}` to
+  (`ragbench.indexing.artifacts`) to `build_ingest_manifest(...)` and `store_spec={"type": store_backend}` to
   `save_nodes(...)` — this picks `json_memory` (numpy-vectorized exact search) or `faiss_local` based on corpus
   size instead of hardcoding a backend. Embeddings themselves are stored in a sibling `embeddings.npy`
   (float32, node-order aligned), not inline in `nodes.json`; `load_nodes()` reattaches them to
@@ -49,7 +49,7 @@ All three methods must use the shared contracts:
   state `load()` built. It does **not** take `artifact_path` and does **not** re-read the artifact.
 - `query()` must not mutate `self` state beyond what's local to that call (build any per-question object — a
   policy, a controller, a running total — as a local variable, not `self.something`). This was always implied by
-  `--latency-repetitions` calling `query()` repeatedly on the same instance, but `raglab eval/bench --concurrency`
+  `--latency-repetitions` calling `query()` repeatedly on the same instance, but `ragbench eval/bench --concurrency`
   additionally runs `query()` from multiple threads at once — shared mutable `self` state there is a data race,
   not just a repeatability bug. `techniques/agentic_rag_arag/pipeline.py` is the reference example: `load()` builds
   the shared, read-only `self._tools`/`self._reranker`, but `query()` builds a fresh policy/controller every call.
@@ -67,13 +67,13 @@ All three methods must use the shared contracts:
 - `retrieval_only` performs retrieval/context construction only and returns `skipped_verification()`.
 - Public citations are canonical document IDs; `[C1]` markers are prompt-local identifiers.
 - Learned rerankers fail in strict mode. Demo fallback must be explicitly enabled and reported as the effective component.
-- `CrossEncoderReranker` (`raglab/inference/rerankers/cross_encoder.py`) supports two backends:
+- `CrossEncoderReranker` (`ragbench/inference/rerankers/cross_encoder.py`) supports two backends:
   `backend="local"` (default, a `sentence-transformers` model loaded once in `load()`) or
   `backend="api"` (a hosted rerank endpoint called per query via `LLMClient.create_rerank()`,
   e.g. `model="cohere/rerank-english-v3.0"`). A technique exposing this choice should declare a
   `reranker_backend` constructor attribute (query-overridable, same as `reranker_model`) and call
   `check_provider_ready(self.reranker_model)` in `load()` unconditionally — it is a no-op for a
-  local model id (unknown prefix) and required for an API model id. `raglab doctor` checks
+  local model id (unknown prefix) and required for an API model id. `ragbench doctor` checks
   `sentence-transformers` availability for `backend="local"` or the provider API key for
   `backend="api"` automatically once the pipeline has a `reranker_model` attribute.
 - If a technique calls a chat model during retrieval itself (not just full-RAG answer synthesis — e.g. HyDE, RAG-Fusion),
@@ -82,7 +82,7 @@ All three methods must use the shared contracts:
 
 ## Acceptance checklist
 
-- `raglab techniques list` discovers the technique from an installed wheel and outside the checkout.
+- `ragbench techniques list` discovers the technique from an installed wheel and outside the checkout.
 - Artifact mismatch, locked overrides, missing dependencies, and invalid modes fail with actionable messages.
 - Offline tests inject fake providers; they do not download models or call APIs.
 - The technique is compared with at least one baseline on the same frozen dataset and report schema.

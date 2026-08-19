@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from raglab.core.schema import RetrievalResult
-from raglab.inference.controllers.agentic import (
+from ragbench.core.schema import RetrievalResult
+from ragbench.inference.controllers.agentic import (
     AgentAction,
     AgenticRetrievalController,
     AgentObservation,

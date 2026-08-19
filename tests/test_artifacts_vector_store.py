@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from raglab.core.measure import canonical_fingerprint
-from raglab.core.schema import IndexedNode
-from raglab.core.text import dense_cosine
-from raglab.indexing.artifacts import (
+from ragbench.core.measure import canonical_fingerprint
+from ragbench.core.schema import IndexedNode
+from ragbench.core.text import dense_cosine
+from ragbench.indexing.artifacts import (
     DEFAULT_FAISS_NODE_THRESHOLD,
-    _source_fingerprint,
+    _ingest_fingerprint,
+    _runtime_fingerprint,
     default_store_backend,
     inspect_artifact,
     load_manifest,
@@ -19,12 +20,12 @@ from raglab.indexing.artifacts import (
     load_vector_store,
     save_nodes,
 )
-from raglab.indexing.vector_stores import JsonMemoryVectorStore
+from ragbench.indexing.vector_stores import JsonMemoryVectorStore
 
 
 def _fixture_manifest() -> dict:
     return {
-        "artifact_version": "4",
+        "artifact_version": "5",
         "pipeline": {
             "id": "test",
             "implementation_level": "test",
@@ -41,7 +42,7 @@ def _fixture_manifest() -> dict:
             "chunk_count": 2,
             "node_count": 2,
         },
-        "runtime": {"created_at": "now", "raglab_version": "0.2.0", "input_path": "fixture"},
+        "runtime": {"created_at": "now", "package_version": "0.2.0", "input_path": "fixture"},
     }
 
 
@@ -254,6 +255,7 @@ def test_default_store_backend_threshold_is_configurable(monkeypatch: pytest.Mon
 
 
 def test_source_fingerprint_covers_shared_engine_code() -> None:
-    # External test technique has no pipeline module; the shared raglab source
+    # External test technique has no pipeline module; the shared ragbench source
     # inventory is still non-empty and stable enough to detect engine drift.
-    assert _source_fingerprint("external_test").startswith("sha256:")
+    assert _ingest_fingerprint("external_test").startswith("sha256:")
+    assert _runtime_fingerprint("external_test").startswith("sha256:")

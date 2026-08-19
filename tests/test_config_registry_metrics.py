@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from evaluation.metrics import evaluate_prediction_rows, evaluate_predictions
-from raglab.benchmarks.runner import _query_metric_name
-from raglab.benchmarks.statistics import paired_bootstrap_delta
-from raglab.benchmarks.suites import claim_eligibility, load_suite, resolve_suite
-from raglab.core.base import list_pipelines, load_pipeline
-from raglab.core.config import load_config
-from raglab.core.schema import EvalItem, RAGAnswer, RetrievalResult
+from ragbench.benchmarks.runner import _query_metric_name
+from ragbench.benchmarks.statistics import paired_bootstrap_delta
+from ragbench.benchmarks.suites import claim_eligibility, load_suite, resolve_suite
+from ragbench.core.base import list_pipelines, load_pipeline
+from ragbench.core.config import load_config
+from ragbench.core.schema import Citation, EvalItem, RAGAnswer, RetrievalResult
+from ragbench.evaluation.metrics import evaluate_prediction_rows, evaluate_predictions
 
 
 def test_list_pipelines_finds_every_technique() -> None:
@@ -30,7 +30,7 @@ def test_load_pipeline_forwards_kwargs() -> None:
 
 
 def test_technique_yaml_metadata_loads() -> None:
-    metadata = load_config("techniques/naive_rag/technique.yaml")
+    metadata = load_config("ragbench/techniques/naive_rag/technique.yaml")
     assert metadata.get("id") == "naive_rag"
 
 
@@ -41,7 +41,7 @@ def test_metrics_include_judge_scores_when_present() -> None:
         query="Q",
         answer="A",
         contexts=[result],
-        citations=["doc:c1"],
+        citations=[Citation(citation_id="C1", doc_id="doc", chunk_id="c1")],
         metadata={"judge": {"answer_correctness": 0.8, "faithfulness": 0.7, "citation_support": 0.9}},
     )
     metrics = evaluate_predictions([item], [prediction])
@@ -100,7 +100,7 @@ def test_suite_contract_locks_runs_and_rejects_ineligible_claims(tmp_path) -> No
     suite_path.write_text(
         f'{{"id":"s","tier":"claim_eligible","dataset":{{"docs":"d","qa":"{fixture}","fingerprint":"sha256:fixture"}},'
         '"mode":"retrieval_only","top_k":5,"required_baselines":["bm25"],"minimum_queries":1,'
-        '"reference_baseline":"bm25","cutoffs":[5],"bootstrap_samples":100,"primary_metrics":["mrr"],'
+        '"reference_baseline":"bm25","cutoffs":[5],"bootstrap_samples":100,"primary_metrics":["mrr"],"primary_metric":"mrr","minimum_effect":0.0,'
         '"warmup_queries":1,"concurrency":1,"latency_sample_size":5}',
         encoding="utf-8",
     )
@@ -132,9 +132,79 @@ def test_claim_eligible_suite_requires_concurrency_protocol_fields(tmp_path) -> 
     suite_path.write_text(
         f'{{"id":"s","tier":"claim_eligible","dataset":{{"docs":"d","qa":"{fixture}","fingerprint":"sha256:fixture"}},'
         '"mode":"retrieval_only","top_k":5,"required_baselines":["bm25"],"minimum_queries":1,'
-        '"reference_baseline":"bm25","cutoffs":[5],"bootstrap_samples":100,"primary_metrics":["mrr"],'
+        '"reference_baseline":"bm25","cutoffs":[5],"bootstrap_samples":100,"primary_metrics":["mrr"],"primary_metric":"mrr","minimum_effect":0.0,'
         '"warmup_queries":1,"concurrency":4,"latency_sample_size":0}',
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="latency_sample_size must be at least 1 when suite.concurrency > 1"):
+        load_suite(suite_path)
+
+
+def _base_suite_json(fixture, **extra_top_level: object) -> str:
+    import json
+
+    payload = {
+        "id": "s",
+        "tier": "claim_eligible",
+        "dataset": {"docs": "d", "qa": str(fixture), "fingerprint": "sha256:fixture"},
+        "mode": "retrieval_only",
+        "top_k": 5,
+        "required_baselines": ["bm25"],
+        "minimum_queries": 1,
+        "reference_baseline": "bm25",
+        "cutoffs": [5],
+        "bootstrap_samples": 100,
+        "primary_metrics": ["mrr"],
+        "warmup_queries": 1,
+        "concurrency": 1,
+        "latency_sample_size": 5,
+    }
+    payload.update(extra_top_level)
+    return json.dumps(payload)
+
+
+def test_claim_eligible_suite_requires_primary_metric_without_pareto_mode(tmp_path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "manifest.json").write_text('{"fingerprint":"sha256:fixture"}', encoding="utf-8")
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(_base_suite_json(fixture), encoding="utf-8")
+    with pytest.raises(ValueError, match="must declare suite.primary_metric"):
+        load_suite(suite_path)
+
+
+def test_claim_eligible_suite_rejects_primary_metric_alongside_pareto_mode(tmp_path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "manifest.json").write_text('{"fingerprint":"sha256:fixture"}', encoding="utf-8")
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        _base_suite_json(fixture, pareto_improvement=True, primary_metric="mrr"), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        load_suite(suite_path)
+
+
+def test_claim_eligible_suite_accepts_pareto_mode_without_primary_metric(tmp_path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "manifest.json").write_text('{"fingerprint":"sha256:fixture"}', encoding="utf-8")
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(_base_suite_json(fixture, pareto_improvement=True), encoding="utf-8")
+    suite = load_suite(suite_path)
+    assert suite["pareto_improvement"] is True
+
+
+def test_claim_eligible_suite_rejects_malformed_coverage_block(tmp_path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "manifest.json").write_text('{"fingerprint":"sha256:fixture"}', encoding="utf-8")
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        _base_suite_json(
+            fixture, primary_metric="mrr", minimum_effect=0.0, coverage={"min_retrieval_coverage": 1.5}
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="min_retrieval_coverage must be a ratio between 0 and 1"):
         load_suite(suite_path)

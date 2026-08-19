@@ -124,7 +124,7 @@ Natural Questions dùng câu hỏi thật từ Google Search và answer annotati
 **Cách dùng đề xuất**:
 
 - Không tải full dataset trong CI.
-- Tạo script `raglab dataset prepare natural_questions --sample 200`.
+- Tạo script `ragbench dataset prepare natural_questions --sample 200`.
 - Convert sang schema nội bộ:
   - `question`
   - `ground_truth_answer`
@@ -485,16 +485,16 @@ datasets/processed/<dataset_id>/
 
 ### Phase 1: Dataset Foundation
 
-- Thêm `raglab/datasets/schema.py` với dataclass/Pydantic model cho `DocumentRecord`, `QueryRecord`, `QrelRecord`.
-- Thêm `raglab/datasets/adapters/`:
+- Thêm `ragbench/datasets/schema.py` với dataclass/Pydantic model cho `DocumentRecord`, `QueryRecord`, `QrelRecord`.
+- Thêm `ragbench/datasets/adapters/`:
   - `local_jsonl.py`
   - `viequad_retrieval.py`
   - `uit_viquad.py`
   - `beir.py`
 - Thêm CLI:
-  - `raglab dataset prepare <dataset_name>`
-  - `raglab dataset validate <processed_dataset_dir>`
-  - `raglab dataset sample <processed_dataset_dir> --n 50`
+  - `ragbench dataset prepare <dataset_name>`
+  - `ragbench dataset validate <processed_dataset_dir>`
+  - `ragbench dataset sample <processed_dataset_dir> --n 50`
 - Không commit raw external datasets; chỉ commit processed sample nhỏ nếu license cho phép.
 
 ### Phase 2: Vietnamese Benchmark Pack

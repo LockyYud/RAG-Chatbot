@@ -5,12 +5,12 @@ from typing import Any
 
 import pytest
 
-from raglab.core.base import load_pipeline
-from raglab.core.doctor import diagnose_technique
-from raglab.core.schema import RetrievalResult
-from raglab.indexing.retrievers import reciprocal_rank_fusion
-from raglab.inference.rerankers.cross_encoder import CrossEncoderReranker, effective_reranker_name
-from raglab.providers.llm_client import LLMClient, capture_provider_usage
+from ragbench.core.base import load_pipeline
+from ragbench.core.doctor import diagnose_technique
+from ragbench.core.schema import RetrievalResult
+from ragbench.indexing.retrievers import reciprocal_rank_fusion
+from ragbench.inference.rerankers.cross_encoder import CrossEncoderReranker, effective_reranker_name
+from ragbench.providers.llm_client import LLMClient, capture_provider_usage
 
 
 def _result(node_id: str, rank: int, score: float = 0.0, text: str = "") -> RetrievalResult:
@@ -115,7 +115,7 @@ def test_cross_encoder_api_backend_scores_and_reorders(monkeypatch) -> None:
             [{"index": i, "relevance_score": float(len(documents) - i)} for i in range(len(documents))]
         )
 
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
 
     reranker = CrossEncoderReranker(model="cohere/rerank-english-v3.0", backend="api")
     results = [_result("a", 1, text="doc a"), _result("b", 2, text="doc b"), _result("c", 3, text="doc c")]
@@ -131,7 +131,7 @@ def test_cross_encoder_api_backend_strict_raises_on_call_failure(monkeypatch) ->
     def handler(model: str, query: str, documents: list[str], top_n: int) -> _FakeRerankResponse:
         raise RuntimeError("network down")
 
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
     reranker = CrossEncoderReranker(model="cohere/rerank-english-v3.0", backend="api", strict=True)
 
     with pytest.raises(RuntimeError, match="API cross-encoder"):
@@ -142,7 +142,7 @@ def test_cross_encoder_api_backend_falls_back_when_not_strict(monkeypatch) -> No
     def handler(model: str, query: str, documents: list[str], top_n: int) -> _FakeRerankResponse:
         raise RuntimeError("network down")
 
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
     reranker = CrossEncoderReranker(model="cohere/rerank-english-v3.0", backend="api", strict=False)
 
     results = [
@@ -159,7 +159,7 @@ def test_create_rerank_tracks_cost_ledger(monkeypatch) -> None:
     def handler(model: str, query: str, documents: list[str], top_n: int) -> _FakeRerankResponse:
         return _FakeRerankResponse([{"index": 0, "relevance_score": 1.0}])
 
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
     monkeypatch.setenv("LLM_RERANK_COST_PER_CALL", "0.002")
 
     with capture_provider_usage() as ledger:
@@ -184,7 +184,7 @@ def test_effective_reranker_name_reflects_per_call_api_fallback_not_static_avail
     def failing_handler(model: str, query: str, documents: list[str], top_n: int) -> _FakeRerankResponse:
         raise RuntimeError("network down")
 
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _fake_litellm_rerank(failing_handler))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _fake_litellm_rerank(failing_handler))
     reranker = CrossEncoderReranker(model="cohere/rerank-english-v3.0", backend="api", strict=False)
     assert reranker.available is True  # static flag: nothing has failed yet, from its own point of view
 
@@ -197,7 +197,7 @@ def test_effective_reranker_name_reports_real_model_on_api_success(monkeypatch) 
     def handler(model: str, query: str, documents: list[str], top_n: int) -> _FakeRerankResponse:
         return _FakeRerankResponse([{"index": i, "relevance_score": 1.0} for i in range(len(documents))])
 
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _fake_litellm_rerank(handler))
     reranker = CrossEncoderReranker(model="cohere/rerank-english-v3.0", backend="api")
 
     reranked = reranker.rerank("q", [_result("a", 1)], top_k=1)
@@ -232,10 +232,10 @@ def test_bm25_hybrid_rerank_reports_lexical_fallback_when_api_reranker_fails(
         raise RuntimeError("network down")
 
     monkeypatch.setattr(
-        "raglab.providers.llm_client._litellm",
+        "ragbench.providers.llm_client._litellm",
         lambda: SimpleNamespace(embedding=fake_embedding, rerank=failing_rerank),
     )
-    monkeypatch.setattr("raglab.providers.llm_client.check_provider_ready", lambda model: None)
+    monkeypatch.setattr("ragbench.providers.llm_client.check_provider_ready", lambda model: None)
 
     artifact = tmp_path / "artifact"
     params = {

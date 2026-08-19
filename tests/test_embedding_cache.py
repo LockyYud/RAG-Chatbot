@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from raglab.providers.embedding_cache import EmbeddingCache, get_embedding_cache
-from raglab.providers.llm_client import LLMClient, capture_provider_usage
+from ragbench.providers.embedding_cache import EmbeddingCache, get_embedding_cache
+from ragbench.providers.llm_client import LLMClient, capture_provider_usage
 
 
 class _FakeEmbeddingResponse:
@@ -56,7 +56,7 @@ def test_get_embedding_cache_disabled_via_env(monkeypatch: pytest.MonkeyPatch, t
 def test_create_embeddings_skips_api_call_on_cache_hit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("RAGLAB_EMBEDDING_CACHE_DIR", str(tmp_path))
     call_log: list[list[str]] = []
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
     client = LLMClient()
 
     first = client.create_embeddings("fake-embed", ["alpha", "beta"])
@@ -72,7 +72,7 @@ def test_create_embeddings_only_calls_api_for_cache_misses_and_preserves_order(
 ) -> None:
     monkeypatch.setenv("RAGLAB_EMBEDDING_CACHE_DIR", str(tmp_path))
     call_log: list[list[str]] = []
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
     client = LLMClient()
 
     client.create_embeddings("fake-embed", ["alpha"])
@@ -91,7 +91,7 @@ def test_create_embeddings_ledger_tracks_hits_and_misses_and_cache_hits_are_free
     monkeypatch.setenv("RAGLAB_EMBEDDING_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("LLM_EMBEDDING_INPUT_COST_PER_1K", "1.0")
     call_log: list[list[str]] = []
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
     client = LLMClient()
 
     with capture_provider_usage() as first_ledger:
@@ -115,7 +115,7 @@ def test_no_embedding_cache_env_disables_reuse_across_calls(monkeypatch: pytest.
     monkeypatch.setenv("RAGLAB_EMBEDDING_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("RAGLAB_EMBEDDING_CACHE", "0")
     call_log: list[list[str]] = []
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
     client = LLMClient()
 
     client.create_embeddings("fake-embed", ["alpha"])
@@ -125,7 +125,7 @@ def test_no_embedding_cache_env_disables_reuse_across_calls(monkeypatch: pytest.
 
 
 def test_concurrent_writers_to_the_same_cache_file_do_not_raise_database_locked(tmp_path: Path) -> None:
-    """raglab eval/bench --concurrency has every worker thread open its own
+    """ragbench eval/bench --concurrency has every worker thread open its own
     EmbeddingCache connection to the same sqlite file. Without WAL + a busy
     timeout, concurrent writers race into "database is locked" instead of
     just waiting their turn."""
@@ -154,12 +154,12 @@ def test_concurrent_writers_to_the_same_cache_file_do_not_raise_database_locked(
 def test_concurrent_create_embeddings_across_threads_does_not_raise(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Simulates raglab eval --concurrency: many threads, each with their own
+    """Simulates ragbench eval --concurrency: many threads, each with their own
     LLMClient, embedding different (guaranteed cache-miss) texts against the
     same on-disk cache at the same time."""
     monkeypatch.setenv("RAGLAB_EMBEDDING_CACHE_DIR", str(tmp_path))
     call_log: list[list[str]] = []
-    monkeypatch.setattr("raglab.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _counting_fake_litellm(call_log))
 
     def embed_one(index: int) -> list[list[float]]:
         return LLMClient().create_embeddings("fake-embed", [f"concurrent-text-{index}"])

@@ -10,9 +10,9 @@ boundaries required for fair experiments.
 2. Declare supported evaluation profiles and external requirements in
    `capabilities` / `requires`.
 3. Implement `ingest()` and `query()` through `BasePipeline`.
-4. Run `raglab doctor --technique <id>` before an online or optional-model run.
+4. Run `ragbench doctor --technique <id>` before an online or optional-model run.
 5. Run the same frozen dataset/profile as the baseline.
-6. Use `raglab experiment` for repeated trials; inspect per-trial summaries
+6. Use `ragbench experiment` for repeated trials; inspect per-trial summaries
    and baseline deltas before making a claim.
 
 ## Evaluation profiles
@@ -36,14 +36,14 @@ may write custom state (tree, graph, token index, checkpoint metadata) into
 its artifact directory before `save_nodes()`;
 the bundle inventory will include and validate it on load.
 
-Use `raglab artifacts inspect` to inspect the manifest. Do not silently load
+Use `ragbench artifacts inspect` to inspect the manifest. Do not silently load
 an artifact after changing its index files or locked config.
 
 ## Experiment discipline
 
 Compare only runs with the same dataset fingerprint, evaluation profile, mode,
-and cutoff. `raglab bench` emits deltas from the first successful baseline;
-`raglab experiment --trials N --seed S` keeps each trial in a separate
+and cutoff. `ragbench bench` emits deltas from the first successful baseline;
+`ragbench experiment --trials N --seed S` keeps each trial in a separate
 directory and writes `matrix.json`.
 
 Provider-dependent techniques must be run in strict mode for benchmark claims.

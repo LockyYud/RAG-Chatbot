@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from raglab.benchmarks.runner import has_failed_runs, run_benchmarks
+from ragbench.benchmarks.runner import has_failed_runs, run_benchmarks
 
 
 def main() -> None:

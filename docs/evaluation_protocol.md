@@ -86,7 +86,7 @@ happens to be. A negative rate is rejected outright as a configuration error. On
 an unpriced one: a run that calls both embeddings and chat models is `"unknown"` unless `LLM_EMBEDDING_INPUT_COST_PER_1K`
 is set **and** both `LLM_CHAT_INPUT_COST_PER_1K` and `LLM_CHAT_OUTPUT_COST_PER_1K` are set.
 
-`--max-estimated-cost-usd` (on `raglab eval` and `raglab bench`) aborts a run once its estimated pipeline+judge cost
+`--max-estimated-cost-usd` (on `ragbench eval` and `ragbench bench`) aborts a run once its estimated pipeline+judge cost
 exceeds the given USD amount, checked after each query. Completed predictions up to that point stay in the
 per-query checkpoint, so the run can be resumed (`--resume` on `bench`) instead of losing the spend that already
 happened. The guard only ever compares a running total that is entirely `"estimated"` so far — the moment any
@@ -119,7 +119,7 @@ faiss is not approximate here — so this choice only affects speed, never quali
 
 For a `claim_eligible` suite, silently substituting `json_memory` because `faiss` happens to be missing on this
 machine is a reproducibility problem, not a quality one — a formal benchmark claim must not depend on what's
-installed where it happened to run. `raglab bench --preflight` fails fast if a `claim_eligible` suite is
+installed where it happened to run. `ragbench bench --preflight` fails fast if a `claim_eligible` suite is
 requested without `faiss` installed (`pip install '.[vector]'`), and `claim_eligibility()` authoritatively
 rejects any completed run whose actual (post-ingest) node count crossed the threshold but whose manifest records
 a backend other than `faiss_local` — catching the case where the environment silently never engaged faiss.
@@ -140,13 +140,13 @@ a backend other than `faiss_local` — catching the case where the environment s
 Both backends degrade to `LexicalOverlapReranker` when unavailable/failing **and** `allow_fallback=True` is set
 (same as before this option existed); with the default `allow_fallback=False`, a missing local model or a
 failed API call raises instead of silently substituting a weaker reranker — the same strict-by-default
-philosophy as the FAISS/embedding-cache backend choices above. `raglab doctor` checks readiness for whichever
+philosophy as the FAISS/embedding-cache backend choices above. `ragbench doctor` checks readiness for whichever
 backend is configured: `sentence-transformers` importability for `"local"`, the provider API key
 (`check_provider_ready(reranker_model)`) for `"api"`.
 
 ## Concurrent quality pass and sequential latency pass
 
-`--concurrency N` (`raglab eval`/`raglab bench`, default `1` = fully sequential, unchanged behavior) splits a run
+`--concurrency N` (`ragbench eval`/`ragbench bench`, default `1` = fully sequential, unchanged behavior) splits a run
 into two passes once `N > 1`:
 
 - **Latency pass**: the first `--latency-sample-size` (default 5) not-yet-resumed queries run one at a time, with

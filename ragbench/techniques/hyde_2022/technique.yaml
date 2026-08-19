@@ -1,0 +1,31 @@
+{
+  "id": "hyde_2022",
+  "name": "HyDE: Hypothetical Document Embeddings",
+  "base": "rag_sequence_2020",
+  "paper": {
+    "title": "Precise Zero-Shot Dense Retrieval without Relevance Labels",
+    "authors": ["Luyu Gao", "Xueguang Ma", "Jimmy Lin", "Jamie Callan"],
+    "year": 2022,
+    "url": "https://arxiv.org/abs/2212.10496"
+  },
+  "implementation": {
+    "level": "paper_inspired",
+    "status": "runnable_with_openai_compatible_api",
+    "notes": "Implements N-sample hypothetical document generation and averaged embeddings, but uses OpenAI-compatible APIs instead of the original model stack.",
+    "reproduced": [
+      "generating N hypothetical documents per query and mean-pooling their embeddings into one proxy search vector",
+      "searching with the proxy vector instead of the raw query embedding"
+    ],
+    "omitted": [
+      "the paper's original generator/retriever model stack — this uses whichever OpenAI-compatible chat/embedding models CHAT_MODEL/EMBED_MODEL point to"
+    ],
+    "deviations": []
+  },
+  "stage": ["query_transformation", "retrieval"],
+  "capabilities": {"evaluation_profiles": ["retrieval", "single_hop_rag"], "custom_artifacts": false},
+  "requires": ["openai_embeddings", "openai_chat"],
+  "best_for": ["vague_queries", "zero_shot_dense_retrieval", "semantic_search", "prose_documents"],
+  "weak_for": ["exact_keyword_lookup", "strict_latency_constraints", "table_heavy_documents"],
+  "config": null,
+  "custom_register": null
+}

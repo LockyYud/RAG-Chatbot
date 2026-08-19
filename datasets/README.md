@@ -32,7 +32,7 @@ This directory is ignored by git except for `.gitkeep`.
 Synthetic QA can be generated with an OpenAI-compatible chat model:
 
 ```bash
-python -m raglab.cli.main dataset generate \
+python -m ragbench.cli.main dataset generate \
   --docs datasets/sample/docs \
   --output datasets/generated/sample_qa.jsonl \
   --limit 50
@@ -69,13 +69,13 @@ datasets/processed/<dataset_id>/
 Available adapters:
 
 ```bash
-raglab dataset list
+ragbench dataset list
 ```
 
 Prepare a benchmark fixture:
 
 ```bash
-uv run --extra research python -m raglab.cli.main dataset prepare viequad_retrieval \
+uv run --extra research python -m ragbench.cli.main dataset prepare viequad_retrieval \
   --output datasets/processed/vi_wiki_retrieval \
   --limit 200
 ```
@@ -86,18 +86,18 @@ sampling accepts `--seed`; the seed and canonical dataset fingerprint are persis
 Validate it:
 
 ```bash
-raglab dataset validate datasets/processed/vi_wiki_retrieval
+ragbench dataset validate datasets/processed/vi_wiki_retrieval
 ```
 
 Then run the existing RAG path against the exported docs/eval files:
 
 ```bash
-uv run python -m raglab.cli.main ingest \
+uv run python -m ragbench.cli.main ingest \
   --technique parent_child \
   --input datasets/processed/vi_wiki_retrieval/docs \
   --output artifacts/vi_wiki_retrieval/parent_child
 
-uv run python -m raglab.cli.main eval \
+uv run python -m ragbench.cli.main eval \
   --technique parent_child \
   --artifact artifacts/vi_wiki_retrieval/parent_child \
   --dataset datasets/processed/vi_wiki_retrieval \
@@ -119,4 +119,4 @@ For reproducible retrieval benchmarks, a sampled query set must retain the
 full upstream corpus. See [`docs/benchmark_protocol_v1.md`](../docs/benchmark_protocol_v1.md).
 
 `golden/TEMPLATE.jsonl` is the schema for human-reviewed end-to-end RAG
-evaluation. Validate a set with `raglab dataset validate-golden <path>`.
+evaluation. Validate a set with `ragbench dataset validate-golden <path>`.

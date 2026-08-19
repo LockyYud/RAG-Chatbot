@@ -1,12 +1,12 @@
 [project]
 name = "rag-pipeline-lab"
-version = "0.2.0"
+version = "0.3.0"
 description = "A full-stack lab for benchmarking RAG pipeline strategies."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "litellm>=1.86.0",
-    # Artifact v4 stores embeddings in a sibling .npy file (raglab/indexing/artifacts.py)
+    # Artifact v4 stores embeddings in a sibling .npy file (ragbench/indexing/artifacts.py)
     # rather than inline in nodes.json — needed by any dense technique's ingest/load,
     # not just the optional FAISS backend, so it is a base dependency now.
     "numpy>=1.26",
@@ -36,15 +36,14 @@ rerank = [
 ]
 
 [project.scripts]
-raglab = "raglab.cli.main:main"
+ragbench = "ragbench.cli.main:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["raglab*", "evaluation*", "techniques*"]
-exclude = ["datasets*", "benchmarks*", "tests*"]
+include = ["ragbench*"]
 
 [tool.setuptools.package-data]
 "*" = ["technique.yaml", "README.md"]
@@ -69,7 +68,7 @@ ignore = ["B008"]
 "benchmarks/run_all.py" = ["E402"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 ignore_missing_imports = true
 strict = false
 warn_unused_ignores = true

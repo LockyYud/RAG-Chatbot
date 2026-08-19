@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from evaluation.runner import run_eval
-from raglab.core.base import load_pipeline
+from ragbench.core.base import load_pipeline
+from ragbench.evaluation.runner import run_eval
 
 
 def test_ingest_query_eval_smoke(tmp_path: Path) -> None:

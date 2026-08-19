@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-import evaluation.runner as runner_module
-from evaluation.runner import BudgetExceededError, run_eval
-from raglab.core.base import load_pipeline
-from raglab.core.schema import RAGAnswer
+import ragbench.evaluation.runner as runner_module
+from ragbench.core.base import load_pipeline
+from ragbench.core.schema import RAGAnswer
+from ragbench.evaluation.runner import BudgetExceededError, run_eval
 
 QUESTION_COUNT = 8
 
@@ -35,7 +35,7 @@ def _write_qa_dataset(path: Path, count: int = QUESTION_COUNT) -> None:
 
 def _make_fake_run_single_query(sleep_seconds: dict[str, float], call_log: list[str], log_lock: threading.Lock):
     def fake_run_single_query(
-        pipeline: Any, item: Any, *, mode: str, latency_repetitions: int, judge: Any
+        pipeline: Any, item: Any, *, mode: str, latency_repetitions: int, judge: Any, seed: Any = None
     ) -> RAGAnswer:
         time.sleep(sleep_seconds.get(item.question_id, 0.0))
         with log_lock:
@@ -65,7 +65,7 @@ def _make_fixed_cost_fake_run_single_query(
     *, cost_per_query: float, sleep_seconds: float, call_log: list[str], log_lock: threading.Lock
 ):
     def fake_run_single_query(
-        pipeline: Any, item: Any, *, mode: str, latency_repetitions: int, judge: Any
+        pipeline: Any, item: Any, *, mode: str, latency_repetitions: int, judge: Any, seed: Any = None
     ) -> RAGAnswer:
         time.sleep(sleep_seconds)
         with log_lock:
@@ -210,7 +210,7 @@ def test_concurrent_run_headline_latency_metrics_exclude_contended_quality_pass(
     assert pipeline is not None
 
     def fake_run_single_query(
-        pipeline: Any, item: Any, *, mode: str, latency_repetitions: int, judge: Any
+        pipeline: Any, item: Any, *, mode: str, latency_repetitions: int, judge: Any, seed: Any = None
     ) -> RAGAnswer:
         # Report the large "latency" without actually sleeping that long, so the test stays fast.
         reported_ms = sleep_seconds[item.question_id] * 1000
