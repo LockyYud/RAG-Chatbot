@@ -7,13 +7,21 @@ The repo is designed as a framework, not a notebook collection. A technique owns
 code, and benchmark report. The engine keeps stable interfaces for processing, indexing, retrieval, context building,
 generation, verification, and evaluation so new research ideas can be added without rewriting the whole pipeline.
 
+> **Name disambiguation.** The Python namespace here is `ragbench`, which is *not*
+> [RAGBench](https://arxiv.org/abs/2407.11005) — the published explainable RAG benchmark with the TRACe evaluation
+> framework — and not the separately published RAGLAB framework either. This project is unaffiliated with both and
+> shares no data or metrics with them. The namespace is a working name pending a final decision on project identity
+> (see `docs/research_roadmap.md`).
+
 ## What It Is
 
 - A self-contained, code-first RAG pipeline engine with stable component contracts.
 - A benchmark harness that writes per-run reports plus JSON, CSV, and Markdown summaries.
 - A local smoke path that runs without API keys.
 - An OpenAI-compatible research path for embeddings, generation, synthetic QA, and LLM-as-judge metrics.
-- Artifact v3 with canonical config/corpus fingerprints, locked embedding metadata, and vector-store validation.
+- Artifact v5 with canonical config/corpus fingerprints, locked embedding metadata, embeddings stored in a
+  binary `.npy` file (not inline JSON), and vector-store validation — FAISS by default above a configurable
+  node-count threshold, numpy-vectorized exact search below it.
 
 ## Architecture
 
@@ -32,20 +40,19 @@ raw docs
 Main package layout:
 
 ```text
-raglab/
+ragbench/
   core/        # schema, interfaces, config, the BasePipeline contract (base.py), measure helpers
   processing/  # parsers, cleaners, chunkers, enrichers
   indexing/    # embeddings, retrievers, artifacts, vector stores
   inference/   # context builders, generators, rerankers, verifiers, controllers
   datasets/    # synthetic QA plus research dataset adapters
   cli/         # developer-facing CLI
-
-evaluation/    # retrieval metrics, judge metrics, eval runner
-benchmarks/    # reproducible multi-technique benchmark runner
-techniques/    # one self-contained pipeline.py + technique.yaml per technique
+  evaluation/  # retrieval metrics, judge metrics, eval runner
+  benchmarks/  # reproducible multi-technique benchmark runner
+  techniques/  # one self-contained pipeline.py + technique.yaml per technique
 ```
 
-Each technique is a self-contained `techniques/<id>/pipeline.py` exposing a
+Each technique is a self-contained `ragbench/techniques/<id>/pipeline.py` exposing a
 `BasePipeline` subclass (no plugin registry, no YAML config overlay) — reading the
 file top-to-bottom tells you exactly what the paper does. The CLI loads it by id.
 
@@ -54,12 +61,12 @@ file top-to-bottom tells you exactly what the paper does. The CLI loads it by id
 Offline smoke path, no API key:
 
 ```bash
-python -m raglab.cli.main ingest \
+python -m ragbench.cli.main ingest \
   --technique parent_child \
   --input datasets/sample/docs \
   --output artifacts/parent_child
 
-python -m raglab.cli.main eval \
+python -m ragbench.cli.main eval \
   --technique parent_child \
   --artifact artifacts/parent_child \
   --dataset datasets/sample/qa.jsonl \
@@ -70,7 +77,7 @@ Run a local smoke benchmark (this is a CLI regression check, not evidence of
 technique quality):
 
 ```bash
-python -m raglab.cli.main bench \
+python -m ragbench.cli.main bench \
   --techniques parent_child \
   --docs datasets/sample/docs \
   --qa datasets/sample/qa.jsonl \
@@ -83,8 +90,8 @@ the dataset, mode, cutoff, and required baselines, then writes an explicit
 eligibility verdict instead of treating a smoke run as research evidence:
 
 ```bash
-python -m raglab.cli.main bench \
-  --suite evaluation/protocol/vi_retrieval_core.yaml \
+python -m ragbench.cli.main bench \
+  --suite ragbench/evaluation/protocol/vi_retrieval_core.yaml \
   --techniques parent_child naive_rag bm25_hybrid_rerank \
   --output benchmarks/results/vi_retrieval_core
 ```
@@ -96,7 +103,7 @@ judge cost is reported separately from technique cost.
 Inspect an artifact:
 
 ```bash
-python -m raglab.cli.main artifacts inspect --artifact artifacts/parent_child
+python -m ragbench.cli.main artifacts inspect --artifact artifacts/parent_child
 ```
 
 ## OpenAI-Compatible Research Path
@@ -114,23 +121,35 @@ OPENAI_JUDGE_MODEL=gpt-4.1-mini
 Pass model choices into a technique explicitly with `--param`, for example
 `--param embedding_model='"ollama/nomic-embed-text"' --param generator_model='"ollama/llama3"'`.
 
-Generate synthetic QA:
+Generate a synthetic benchmark from raw documents. Two different models are
+required — one writes the questions, another checks them — because a generator
+that verifies its own output is grading its own work. The full design, and what
+such a benchmark can and cannot be used for, is in
+[`docs/synthetic_benchmark_v2.md`](docs/synthetic_benchmark_v2.md).
 
 ```bash
-python -m raglab.cli.main dataset generate \
+python -m ragbench.cli.main dataset generate \
   --docs datasets/sample/docs \
-  --output datasets/generated/sample_qa.jsonl \
-  --limit 50 \
-  --model "$CHAT_MODEL"
+  --output datasets/generated/sample_qa \
+  --max-chunks 100 \
+  --model "$CHAT_MODEL" \
+  --verifier-model "$RAGBENCH_VERIFIER_MODEL"
 ```
+
+The output directory holds `qa.jsonl` and a `manifest.json` recording the corpus
+fingerprint, every model role, and each stage's reject rate. A generated set is
+always `protocol_split: "dev"`, and every report built from one carries a
+`trust` block whose best possible verdict is `synthetic_trusted_for_ranking` —
+ranking techniques, never an absolute score. Earning even that requires
+`dataset audit` against a human-labelled golden set.
 
 Run full RAG evaluation with LLM-as-judge metrics:
 
 ```bash
-python -m raglab.cli.main eval \
+python -m ragbench.cli.main eval \
   --technique rag_sequence_2020 \
   --artifact artifacts/rag_sequence_2020 \
-  --dataset datasets/generated/sample_qa.jsonl \
+  --dataset datasets/generated/sample_qa \
   --output benchmarks/results/rag_sequence_2020_eval.json \
   --mode full_rag \
   --judge \
@@ -140,23 +159,23 @@ python -m raglab.cli.main eval \
 ## Vietnamese Research Datasets
 
 The fixed Vietnamese datasets are for **evaluation and research experiments only**. They do not change the normal user
-document flow. User-facing RAG still works by ingesting raw user documents through `raglab ingest` and querying the saved
-artifact through `raglab query`.
+document flow. User-facing RAG still works by ingesting raw user documents through `ragbench ingest` and querying the saved
+artifact through `ragbench query`.
 
 Research dataset flow:
 
 ```text
 public benchmark dataset
-  -> raglab dataset prepare
+  -> ragbench dataset prepare
   -> processed evaluation fixture
-  -> raglab ingest processed docs
-  -> raglab eval processed qa/qrels
+  -> ragbench ingest processed docs
+  -> ragbench eval processed qa/qrels
 ```
 
 List supported adapters:
 
 ```bash
-python -m raglab.cli.main dataset list
+python -m ragbench.cli.main dataset list
 ```
 
 Current adapters:
@@ -173,7 +192,7 @@ Current adapters:
 Prepare a processed evaluation fixture:
 
 ```bash
-uv run --extra research python -m raglab.cli.main dataset prepare viequad_retrieval \
+uv run --extra research python -m ragbench.cli.main dataset prepare viequad_retrieval \
   --output datasets/processed/vi_wiki_retrieval \
   --limit 200
 ```
@@ -181,7 +200,7 @@ uv run --extra research python -m raglab.cli.main dataset prepare viequad_retrie
 Validate the processed fixture:
 
 ```bash
-python -m raglab.cli.main dataset validate datasets/processed/vi_wiki_retrieval
+python -m ragbench.cli.main dataset validate datasets/processed/vi_wiki_retrieval
 ```
 
 The prepared directory contains both canonical evaluation files and compatibility exports for the current pipeline:
@@ -200,12 +219,12 @@ datasets/processed/vi_wiki_retrieval/
 Run ingest/eval on a prepared dataset:
 
 ```bash
-uv run python -m raglab.cli.main ingest \
+uv run python -m ragbench.cli.main ingest \
   --technique parent_child \
   --input datasets/processed/vi_wiki_retrieval/docs \
   --output artifacts/vi_wiki_retrieval/parent_child
 
-uv run python -m raglab.cli.main eval \
+uv run python -m ragbench.cli.main eval \
   --technique parent_child \
   --artifact artifacts/vi_wiki_retrieval/parent_child \
   --dataset datasets/processed/vi_wiki_retrieval \
@@ -216,7 +235,7 @@ uv run python -m raglab.cli.main eval \
 Create a smaller local sample from a prepared fixture:
 
 ```bash
-python -m raglab.cli.main dataset sample datasets/processed/vi_wiki_retrieval \
+python -m ragbench.cli.main dataset sample datasets/processed/vi_wiki_retrieval \
   --output datasets/processed/vi_wiki_retrieval_sample_50 \
   --limit 50
 ```
@@ -263,13 +282,13 @@ then the modern retrieval stack (hybrid → contextual indexing → agentic cont
 List and inspect techniques:
 
 ```bash
-python -m raglab.cli.main techniques list
-python -m raglab.cli.main techniques show rag_sequence_2020
+python -m ragbench.cli.main techniques list
+python -m ragbench.cli.main techniques show rag_sequence_2020
 ```
 
 ## Adding A Technique
 
-1. Copy `techniques/_template/` to `techniques/<your_id>/`.
+1. Copy `ragbench/techniques/_template/` to `ragbench/techniques/<your_id>/`.
 2. Fill `technique.yaml` with metadata: implementation level, requirements, best/weak cases.
 3. Implement the `BasePipeline` subclass in `pipeline.py` — wire up the engine
    components you need (chunkers, embedders, retrievers, rerankers, controllers,
@@ -282,14 +301,14 @@ python -m raglab.cli.main techniques show rag_sequence_2020
 The technique is then discovered automatically — no registry to edit:
 
 ```bash
-python -m raglab.cli.main techniques list
-python -m raglab.cli.main ingest --technique <your_id> --input docs/ --output artifacts/<your_id>
+python -m ragbench.cli.main techniques list
+python -m ragbench.cli.main ingest --technique <your_id> --input docs/ --output artifacts/<your_id>
 ```
 
 Override any `pipeline.py` constructor parameter from the CLI with `--param` (JSON-parsed, repeatable):
 
 ```bash
-python -m raglab.cli.main ingest --technique <your_id> --input docs/ --output art/ \
+python -m ragbench.cli.main ingest --technique <your_id> --input docs/ --output art/ \
   --param chunk_size=300 --param top_k=10
 ```
 
@@ -305,16 +324,17 @@ Vector store backends:
 
 Retrieval, reranking and orchestration components (reusable across techniques):
 
-- `RRFHybridRetriever` (`raglab/indexing/retrievers.py`): fuses `BM25Retriever` and
+- `RRFHybridRetriever` (`ragbench/indexing/retrievers.py`): fuses `BM25Retriever` and
   `DenseRetriever` with Reciprocal Rank Fusion (rank-based, no score-scale tuning).
   `reciprocal_rank_fusion()` is exposed as a pure helper.
-- `CrossEncoderReranker` (`raglab/inference/rerankers/cross_encoder.py`): precision
-  reranking via a `sentence-transformers` cross-encoder. Evaluation and benchmark
-  runs are strict; interactive query fallback requires `--allow-fallback` and is recorded in metadata.
-- `ContextualEnricher` (`raglab/processing/enrichers/contextual.py`): prepends an
+- `CrossEncoderReranker` (`ragbench/inference/rerankers/cross_encoder.py`): precision
+  reranking via a `sentence-transformers` cross-encoder (`reranker_backend="local"`, default) or a hosted
+  rerank API via litellm (`reranker_backend="api"`, e.g. `cohere/rerank-english-v3.0`). Evaluation and
+  benchmark runs are strict; interactive query fallback requires `--allow-fallback` and is recorded in metadata.
+- `ContextualEnricher` (`ragbench/processing/enrichers/contextual.py`): prepends an
   LLM-generated, document-aware context to each chunk's index text (Anthropic's
   Contextual Embeddings + Contextual BM25 in one step).
-- `AgenticRetrievalController` (`raglab/inference/controllers/agentic.py`): a
+- `AgenticRetrievalController` (`ragbench/inference/controllers/agentic.py`): a
   training-free, multi-step retrieval loop with an injectable policy, `max_steps`
   guards, and a structured decision trace — the shared engine for agentic techniques.
 
@@ -344,7 +364,7 @@ make bench-sample
 make ci
 ```
 
-CI runs Ruff, mypy, and pytest on Python 3.11.
+CI runs Ruff, mypy, and pytest on Python 3.11 and 3.12.
 
 Evaluation details are documented in `docs/evaluation_protocol.md`.
 

@@ -13,6 +13,7 @@
     "license": "MIT according to Hugging Face dataset card",
     "adapter": "viequad_retrieval",
     "split": "validation",
+    "protocol_split": "dev",
     "sampling_seed": 42,
     "sampled_query_count": 2048,
     "source_corpus_size": 2490,

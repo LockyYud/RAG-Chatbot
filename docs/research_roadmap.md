@@ -189,7 +189,7 @@ rồi mới đến adaptive, hierarchical và agentic methods.
 ## Tên Thư Mục Technique Đề Xuất
 
 ```text
-techniques/
+ragbench/techniques/
   bm25_hybrid_rerank/
   dpr_2020/
   fid_2020/

@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from raglab.core.io import iter_input_files
-from raglab.datasets.adapters import common, viequad_retrieval
-from raglab.datasets.golden import validate_golden_dataset
-from raglab.datasets.schema import (
+from ragbench.core.io import iter_input_files
+from ragbench.datasets.adapters import common, viequad_retrieval
+from ragbench.datasets.golden import validate_golden_dataset
+from ragbench.datasets.schema import (
     DocumentRecord,
     PreparedDataset,
     QrelRecord,

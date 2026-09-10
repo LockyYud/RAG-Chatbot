@@ -11,6 +11,8 @@ It is not part of the user document ingestion path.
 - Source: mteb/VieQuADRetrieval
 - License: MIT according to Hugging Face dataset card
 - Corpus policy: full_upstream_corpus
+- Upstream split: validation (provenance only)
+- Protocol split: dev — tuning set; config may be chosen against it, so it cannot support an empirical claim
 
 ## Files
 
