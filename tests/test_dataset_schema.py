@@ -82,17 +82,17 @@ def test_viequad_query_sampling_keeps_full_corpus(monkeypatch: pytest.MonkeyPatc
 
 
 def test_zalo_adapter_scopes_queries_to_split_qrels_and_keeps_full_corpus(monkeypatch: pytest.MonkeyPatch) -> None:
-    corpus = [
+    corpus: list[dict[str, object]] = [
         {"id": "d1", "title": "T1", "text": "Điều khoản một"},
         {"id": "d2", "title": "T2", "text": "Điều khoản hai"},
         {"id": "d3", "title": "T3", "text": "hard negative"},
     ]
-    queries = [
+    queries: list[dict[str, object]] = [
         {"query_id": "q1", "question": "Câu hỏi một?"},
         {"query_id": "q2", "question": "Câu hỏi hai?"},
         {"query_id": "q3", "question": "Câu hỏi chưa có qrel ở split này?"},
     ]
-    qrels = {
+    qrels: dict[str, list[dict[str, object]]] = {
         "train": [{"query_id": "q1", "corpus_id": "d1", "score": 1}, {"query_id": "q3", "corpus_id": "d3", "score": 1}],
         "test": [{"query_id": "q2", "corpus_id": "d2", "score": 1}],
     }
@@ -121,9 +121,9 @@ def test_zalo_adapter_scopes_queries_to_split_qrels_and_keeps_full_corpus(monkey
 
 
 def test_zalo_prepared_dataset_passes_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    corpus = [{"id": "d1", "title": "T1", "text": "Điều khoản một"}]
-    queries = [{"query_id": "q1", "question": "Câu hỏi một?"}]
-    qrels = [{"query_id": "q1", "corpus_id": "d1", "score": 1}]
+    corpus: list[dict[str, object]] = [{"id": "d1", "title": "T1", "text": "Điều khoản một"}]
+    queries: list[dict[str, object]] = [{"query_id": "q1", "question": "Câu hỏi một?"}]
+    qrels: list[dict[str, object]] = [{"query_id": "q1", "corpus_id": "d1", "score": 1}]
 
     def load_fixture(repo_id: str, *args: object, **kwargs: object) -> list[dict[str, object]]:
         data_files = str(kwargs["data_files"])
