@@ -255,13 +255,16 @@ def validate_processed_dataset(dataset_dir: str | Path) -> dict[str, Any]:
             "qrels": [x.to_dict() for x in qrels],
         }
     )
+    manifest_metadata = _manifest_metadata(source / "manifest.json")
     return {
         "dataset_dir": str(source),
         "documents": len(documents),
         "queries": len(queries),
         "qrels": len(qrels),
         "answerable_queries": sum(1 for query in queries if query.is_answerable),
-        "corpus_policy": _corpus_policy(documents, qrels, source / "manifest.json"),
+        "corpus_policy": _corpus_policy(documents, qrels, manifest_metadata),
+        "annotation_type": manifest_metadata.get("annotation_type", "unspecified"),
+        "provenance_warnings": _provenance_warnings(manifest_metadata),
         "fingerprint": fingerprint,
     }
 
@@ -422,7 +425,9 @@ def _dataset_card(
             f"- Queries: {len(queries)}",
             f"- Qrels: {len(qrels)}",
             f"- Source: {metadata.get('source', 'unknown')}",
+            f"- Source revision: {metadata.get('source_revision', 'unpinned')}",
             f"- License: {metadata.get('license', 'check upstream dataset card')}",
+            f"- Annotation type: {metadata.get('annotation_type', 'unspecified')}",
             f"- Corpus policy: {metadata.get('corpus_policy', 'dataset-defined')}",
             f"- Upstream split: {metadata.get('split', 'unspecified')} (provenance only)",
             f"- Protocol split: {_protocol_split_note(metadata.get('protocol_split'))}",
@@ -439,20 +444,36 @@ def _dataset_card(
     )
 
 
-def _corpus_policy(documents: list[DocumentRecord], qrels: list[QrelRecord], manifest_path: Path) -> str:
+def _manifest_metadata(manifest_path: Path) -> dict[str, Any]:
+    if not manifest_path.exists():
+        return {}
+    try:
+        metadata = read_json(manifest_path).get("metadata", {})
+    except (OSError, ValueError):
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+# Recommended, not required: a small in-house or synthetic fixture can be a
+# perfectly valid dataset without a pinned upstream revision, so an absent
+# field is surfaced as a warning callers can act on, never a hard failure —
+# the same posture as ``corpus_policy`` below.
+_RECOMMENDED_PROVENANCE_FIELDS = ("source", "source_revision", "annotation_type")
+
+
+def _provenance_warnings(metadata: dict[str, Any]) -> list[str]:
+    return [f"metadata.{name} is not declared" for name in _RECOMMENDED_PROVENANCE_FIELDS if not metadata.get(name)]
+
+
+def _corpus_policy(documents: list[DocumentRecord], qrels: list[QrelRecord], metadata: dict[str, Any]) -> str:
     """Expose a warning-friendly policy label without guessing corpus validity.
 
     A small corpus can be perfectly legitimate for an in-domain benchmark, so
     validation does not reject it. Upstream adapters instead declare their
     policy explicitly and benchmark reports carry that declaration forward.
     """
-    if manifest_path.exists():
-        try:
-            metadata = read_json(manifest_path).get("metadata", {})
-            if isinstance(metadata, dict) and isinstance(metadata.get("corpus_policy"), str):
-                return metadata["corpus_policy"]
-        except (OSError, ValueError):
-            pass
+    if isinstance(metadata.get("corpus_policy"), str):
+        return metadata["corpus_policy"]
     positives = {item.doc_id for item in qrels if item.relevance > 0}
     return "positive_only_suspected" if documents and {doc.doc_id for doc in documents} <= positives else "unspecified"
 

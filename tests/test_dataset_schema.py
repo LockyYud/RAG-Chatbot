@@ -169,6 +169,26 @@ def test_uit_viquad_adapter_pins_revision_and_declares_provenance(monkeypatch: p
     assert prepared.queries[0].ground_truth_answer == "Câu trả lời"
 
 
+def test_validate_processed_dataset_reports_missing_provenance(tmp_path: Path) -> None:
+    output = tmp_path / "no_provenance"
+    write_prepared_dataset(
+        PreparedDataset(
+            dataset_id="unit_no_provenance",
+            documents=[DocumentRecord(doc_id="d1", text="text")],
+            queries=[QueryRecord(query_id="q1", question="Q?")],
+            qrels=[QrelRecord(query_id="q1", doc_id="d1")],
+        ),
+        output,
+    )
+    validation = validate_processed_dataset(output)
+    assert validation["annotation_type"] == "unspecified"
+    assert validation["provenance_warnings"] == [
+        "metadata.source is not declared",
+        "metadata.source_revision is not declared",
+        "metadata.annotation_type is not declared",
+    ]
+
+
 def test_require_datasets_reports_local_namespace_shadow(monkeypatch: pytest.MonkeyPatch) -> None:
     class LocalDatasetsNamespace:
         pass
