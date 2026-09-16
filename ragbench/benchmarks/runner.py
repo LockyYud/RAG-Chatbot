@@ -19,6 +19,59 @@ from ragbench.evaluation.runner import run_eval
 from ragbench.indexing.artifacts import load_manifest
 
 
+class ProviderPreflightError(RuntimeError):
+    """Raised when the live provider preflight gate fails inside ``run_benchmarks``.
+
+    Distinct from the per-technique ``except Exception`` in the benchmark
+    loop below: this must abort the *entire* run, before any technique's
+    ``pipeline.ingest()`` is called, rather than being logged as one failed
+    technique while the loop moves on to the next.
+    """
+
+
+def _format_check_line(technique_id: str, check: dict[str, Any]) -> str:
+    symbol = "✓" if check["status"] == "ok" else "✗"
+    latency = f" — {check['latency_ms']:.0f} ms" if check.get("latency_ms") is not None else ""
+    return f"{symbol} [{technique_id}] {check['name']}: {check['detail']}{latency}"
+
+
+def _check_techniques_ready(
+    technique_ids: list[str],
+    mode: str,
+    *,
+    offline: bool = False,
+    verbose: bool = False,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Run ``diagnose_technique`` for every technique, deduping live probes.
+
+    Live probes are deduplicated by ``(operation, model)`` across *all*
+    techniques checked in one call (not just within one technique) via a
+    shared cache dict passed to every ``diagnose_technique`` call.
+
+    Returns ``(technique_checks, reasons)`` — ``reasons`` is empty iff every
+    technique is ready. Shared by ``run_preflight`` (which folds these
+    reasons into its broader gate list) and ``run_benchmarks`` (which uses
+    them to abort before any ingest).
+    """
+    technique_checks: list[dict[str, Any]] = []
+    reasons: list[str] = []
+    probe_cache: dict[tuple[str, str], dict[str, Any]] = {}
+    for technique_id in technique_ids:
+        pipeline = load_pipeline(technique_id)
+        if pipeline is None:
+            reasons.append(f"unknown bundled technique '{technique_id}'")
+            continue
+        diagnosis = diagnose_technique(pipeline, mode=mode, offline=offline, _probe_cache=probe_cache)
+        technique_checks.append(diagnosis)
+        if verbose:
+            for check in diagnosis["checks"]:
+                print(_format_check_line(technique_id, check))
+        if not diagnosis["ready"]:
+            failed = "; ".join(check["detail"] for check in diagnosis["checks"] if check["status"] == "failed")
+            reasons.append(f"{technique_id} not ready: {failed}")
+    return technique_checks, reasons
+
+
 def run_benchmarks(
     *,
     technique_ids: list[str],
@@ -78,6 +131,19 @@ def run_benchmarks(
     latency_sample_size = latency_sample_size if latency_sample_size is not None else 5
     cutoffs = list(suite.get("cutoffs", [top_k])) if suite else [top_k]
     bootstrap_samples = int(suite.get("bootstrap_samples", 10_000)) if suite else 10_000
+
+    # Live provider preflight — BEFORE any ingest. A dead/revoked key must be
+    # caught in seconds, not after hours of ingesting a large corpus for a
+    # technique whose ingest itself needs it (see ProviderPreflightError).
+    # None of run_benchmarks()'s callers (CLI `bench`, benchmarks/run_all.py,
+    # experiments.py) can be trusted to call run_preflight() themselves, so
+    # the gate lives here, centrally.
+    _technique_checks, _preflight_reasons = _check_techniques_ready(technique_ids, mode, offline=False, verbose=True)
+    if _preflight_reasons:
+        raise ProviderPreflightError(
+            "Benchmark aborted before ingest — provider preflight failed: " + "; ".join(_preflight_reasons)
+        )
+
     output_dir = Path(output)
     output_dir.mkdir(parents=True, exist_ok=True)
     # Do NOT call random.seed(seed) here (removed): it mutated *global*
@@ -209,6 +275,7 @@ def run_preflight(
     warmup_queries: int | None = None,
     concurrency: int | None = None,
     latency_sample_size: int | None = None,
+    offline: bool = False,
 ) -> dict[str, Any]:
     """Check everything that can fail *before* spending an ingest/query/API call.
 
@@ -217,7 +284,9 @@ def run_preflight(
     run's results), and ``doctor`` for every required technique — all without
     ingesting a single document. A long benchmark should never discover a
     missing API key or a dirty worktree after hours of work; it should
-    discover that in seconds, here.
+    discover that in seconds, here. Pass ``offline=True`` to skip the live
+    provider probes and check only that required env vars are set (today's
+    static-only behavior) — for CI/debugging without network access.
     """
     reasons: list[str] = []
     if not suite_path and (not docs or not qa):
@@ -274,17 +343,10 @@ def run_preflight(
         if minimum and int(manifest.get("queries", 0)) < minimum:
             reasons.append(f"dataset has {manifest.get('queries', 0)} queries; suite requires {minimum}")
 
-    technique_checks: list[dict[str, Any]] = []
-    for technique_id in technique_ids:
-        pipeline = load_pipeline(technique_id)
-        if pipeline is None:
-            reasons.append(f"unknown bundled technique '{technique_id}'")
-            continue
-        diagnosis = diagnose_technique(pipeline, mode=mode)
-        technique_checks.append(diagnosis)
-        if not diagnosis["ready"]:
-            failed = "; ".join(check["detail"] for check in diagnosis["checks"] if check["status"] == "failed")
-            reasons.append(f"{technique_id} not ready: {failed}")
+    technique_checks, technique_reasons = _check_techniques_ready(
+        technique_ids, mode, offline=offline, verbose=not offline
+    )
+    reasons.extend(technique_reasons)
 
     return {
         "ready": not reasons,

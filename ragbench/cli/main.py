@@ -210,6 +210,12 @@ def main() -> None:
         help="Check suite/dataset/provider/dependency readiness only; do not ingest or query anything",
     )
     bench_parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="With --preflight, skip live provider probes and check only that required env vars are set "
+        "(no network calls) — for CI/debugging without network access",
+    )
+    bench_parser.add_argument(
         "--no-embedding-cache", action="store_true", help="Disable the persistent (model, text) embedding cache"
     )
     bench_parser.add_argument(
@@ -361,6 +367,11 @@ def main() -> None:
     doctor_parser = subparsers.add_parser("doctor", help="Check technique dependencies and provider configuration")
     _add_technique_args(doctor_parser)
     doctor_parser.add_argument("--mode", choices=["full_rag", "retrieval_only"], default="full_rag")
+    doctor_parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Skip live provider probes and check only that required env vars are set (no network calls)",
+    )
 
     args = parser.parse_args()
     if getattr(args, "no_embedding_cache", False):
@@ -466,7 +477,13 @@ def main() -> None:
         elif args.techniques_command == "show":
             _print(get_pipeline_metadata(args.technique_id))
     elif args.command == "doctor":
-        _print(diagnose_technique(_resolve_pipeline(args), mode=args.mode))
+        diagnosis = diagnose_technique(_resolve_pipeline(args), mode=args.mode, offline=args.offline)
+        if not args.offline:
+            for check in diagnosis["checks"]:
+                symbol = "✓" if check["status"] == "ok" else "✗"
+                latency = f" — {check['latency_ms']:.0f} ms" if check.get("latency_ms") is not None else ""
+                print(f"{symbol} {check['name']}: {check['detail']}{latency}")
+        _print(diagnosis)
 
 
 def _generate_synthetic(args: argparse.Namespace) -> dict[str, Any]:
@@ -614,6 +631,7 @@ def _bench(args: argparse.Namespace) -> None:
                 warmup_queries=args.warmup_queries,
                 concurrency=args.concurrency,
                 latency_sample_size=args.latency_sample_size,
+                offline=args.offline,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
