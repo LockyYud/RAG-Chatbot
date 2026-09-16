@@ -99,16 +99,17 @@ def test_zalo_adapter_scopes_queries_to_split_qrels_and_keeps_full_corpus(monkey
         "test": [{"query_id": "q2", "corpus_id": "d2", "score": 1}],
     }
 
-    def load_fixture(repo_id: str, *args: object, **kwargs: object) -> list[dict[str, object]]:
+    def load_fixture(repo_id: str, config: str, *args: object, **kwargs: object) -> list[dict[str, object]]:
         assert repo_id == zalo_legal_retrieval.REPO_ID
         assert kwargs["revision"] == zalo_legal_retrieval.REVISION
-        data_files = kwargs["data_files"]
-        assert isinstance(data_files, str)
-        if data_files.startswith("corpus/"):
+        if config == "corpus":
+            assert kwargs["split"] == "train"
             return corpus
-        if data_files.startswith("queries/"):
+        if config == "queries":
+            assert kwargs["split"] == "train"
             return queries
-        return qrels[data_files.split("/")[1].split("-")[0]]
+        assert config == "qrels"
+        return qrels[str(kwargs["split"])]
 
     monkeypatch.setattr(zalo_legal_retrieval, "load_hf_dataset", load_fixture)
     prepared = zalo_legal_retrieval.prepare_zalo_legal_retrieval(split="test")
@@ -127,12 +128,12 @@ def test_zalo_prepared_dataset_passes_validation(tmp_path: Path, monkeypatch: py
     queries: list[dict[str, object]] = [{"query_id": "q1", "question": "Câu hỏi một?"}]
     qrels: list[dict[str, object]] = [{"query_id": "q1", "corpus_id": "d1", "score": 1}]
 
-    def load_fixture(repo_id: str, *args: object, **kwargs: object) -> list[dict[str, object]]:
-        data_files = str(kwargs["data_files"])
-        if data_files.startswith("corpus/"):
+    def load_fixture(repo_id: str, config: str, *args: object, **kwargs: object) -> list[dict[str, object]]:
+        if config == "corpus":
             return corpus
-        if data_files.startswith("queries/"):
+        if config == "queries":
             return queries
+        assert config == "qrels"
         return qrels
 
     monkeypatch.setattr(zalo_legal_retrieval, "load_hf_dataset", load_fixture)

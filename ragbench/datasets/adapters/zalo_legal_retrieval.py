@@ -92,17 +92,15 @@ def prepare_zalo_legal_retrieval(
 
 def _load_zalo_triplet(qrel_split: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     try:
-        # Corpus and queries ship as a single "train" data file each; only
-        # qrels are split into train/test subsets of the shared query pool.
-        corpus = rows_from_split(
-            load_hf_dataset(REPO_ID, data_files="corpus/train-*.parquet", split="train", revision=REVISION)
-        )
-        queries = rows_from_split(
-            load_hf_dataset(REPO_ID, data_files="queries/train-*.parquet", split="train", revision=REVISION)
-        )
-        qrels = rows_from_split(
-            load_hf_dataset(REPO_ID, data_files=f"qrels/{qrel_split}-*.parquet", split="train", revision=REVISION)
-        )
+        # This repo ships corpus/queries/qrels as three distinct HF configs
+        # (not just three parquet files under one default config), each with
+        # its own schema. Loading via data_files= without a config name pulls
+        # in the default config's schema (qrels: corpus_id/query_id/score)
+        # and casts every file to it, which corrupts the corpus/queries rows
+        # instead of raising — the config name must be passed explicitly.
+        corpus = rows_from_split(load_hf_dataset(REPO_ID, "corpus", split="train", revision=REVISION))
+        queries = rows_from_split(load_hf_dataset(REPO_ID, "queries", split="train", revision=REVISION))
+        qrels = rows_from_split(load_hf_dataset(REPO_ID, "qrels", split=qrel_split, revision=REVISION))
         return corpus, queries, qrels
     except Exception as exc:  # pragma: no cover - depends on upstream HF packaging
         raise RuntimeError(
