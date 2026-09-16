@@ -4,6 +4,7 @@ import math
 from typing import Any
 
 from ragbench.core.schema import EvalItem, RAGAnswer
+from ragbench.evaluation.metrics.qa import exact_match, token_f1
 
 
 def evaluate_prediction_rows(
@@ -49,6 +50,13 @@ def evaluate_prediction_rows(
             "context_tokens": int(prediction.metadata.get("context_token_count", 0)),
             "estimated_cost": _cost(prediction),
         }
+        if item.ground_truth_answer is not None:
+            # Only extractive-QA style items carry a ground_truth_answer;
+            # unanswerable questions leave it None, so this naturally scopes
+            # EM/F1 to the same population the LLM judge's correctness score
+            # covers, giving a deterministic primary signal alongside it.
+            row["exact_match"] = exact_match(prediction.answer, item.ground_truth_answer)
+            row["token_f1"] = token_f1(prediction.answer, item.ground_truth_answer)
         if include_citation_metrics and answerable and item.expected_citations:
             predicted_doc_ids = {citation.doc_id for citation in prediction.citations}
             precision, recall, f1 = _citation_scores(set(item.expected_citations), predicted_doc_ids)
@@ -152,6 +160,11 @@ def evaluate_predictions(
         metrics["citation_precision"] = metrics["citation_document_precision"]
         metrics["citation_recall"] = metrics["citation_document_recall"]
         metrics["citation_f1"] = metrics["citation_document_f1"]
+    qa_rows = [row for row in rows if "exact_match" in row]
+    if qa_rows:
+        metrics["exact_match"] = _mean(row["exact_match"] for row in qa_rows)
+        metrics["token_f1"] = _mean(row["token_f1"] for row in qa_rows)
+        metrics["qa_queries_evaluated"] = len(qa_rows)
     _add_judge_metrics(metrics, rows)
     return metrics
 
