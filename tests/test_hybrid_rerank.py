@@ -265,12 +265,14 @@ def test_doctor_checks_api_reranker_provider_key(monkeypatch) -> None:
     )
     assert pipeline is not None
 
-    report = diagnose_technique(pipeline, mode="retrieval_only")
+    report = diagnose_technique(pipeline, mode="retrieval_only", offline=True)
     cross_encoder_check = next(c for c in report["checks"] if c["name"] == "cross_encoder")
     assert cross_encoder_check["status"] == "failed"
     assert "COHERE_API_KEY" in cross_encoder_check["detail"]
 
     monkeypatch.setenv("COHERE_API_KEY", "test-key")
-    report = diagnose_technique(pipeline, mode="retrieval_only")
+    # offline=True: this test is about the static env-var gate, not the live
+    # probe (which would otherwise make a real network call here).
+    report = diagnose_technique(pipeline, mode="retrieval_only", offline=True)
     cross_encoder_check = next(c for c in report["checks"] if c["name"] == "cross_encoder")
     assert cross_encoder_check["status"] == "ok"

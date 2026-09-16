@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from ragbench.benchmarks.runner import run_preflight
+from ragbench.benchmarks.runner import ProviderPreflightError, run_benchmarks, run_preflight
 from ragbench.benchmarks.suites import claim_eligibility, load_suite
 
 
@@ -43,7 +43,7 @@ def test_preflight_fails_claim_eligible_suite_without_faiss_installed(
     monkeypatch.setattr("ragbench.benchmarks.runner.importlib.util.find_spec", lambda name: None)
     suite_path, _ = _write_suite(tmp_path, tier="claim_eligible")
 
-    result = run_preflight(technique_ids=["parent_child"], docs=None, qa=None, suite_path=str(suite_path))
+    result = run_preflight(technique_ids=["parent_child"], docs=None, qa=None, suite_path=str(suite_path), offline=True)
 
     assert any("faiss" in reason for reason in result["reasons"])
     assert result["ready"] is False
@@ -55,7 +55,7 @@ def test_preflight_ignores_missing_faiss_for_non_claim_eligible_suite(
     monkeypatch.setattr("ragbench.benchmarks.runner.importlib.util.find_spec", lambda name: None)
     suite_path, _ = _write_suite(tmp_path, tier="smoke_only")
 
-    result = run_preflight(technique_ids=["parent_child"], docs=None, qa=None, suite_path=str(suite_path))
+    result = run_preflight(technique_ids=["parent_child"], docs=None, qa=None, suite_path=str(suite_path), offline=True)
 
     assert not any("faiss" in reason for reason in result["reasons"])
 
@@ -64,7 +64,7 @@ def test_preflight_passes_faiss_check_when_installed(tmp_path: Path, monkeypatch
     monkeypatch.setattr("ragbench.benchmarks.runner.importlib.util.find_spec", lambda name: object())
     suite_path, _ = _write_suite(tmp_path, tier="claim_eligible")
 
-    result = run_preflight(technique_ids=["parent_child"], docs=None, qa=None, suite_path=str(suite_path))
+    result = run_preflight(technique_ids=["parent_child"], docs=None, qa=None, suite_path=str(suite_path), offline=True)
 
     assert not any("faiss" in reason for reason in result["reasons"])
 
@@ -230,3 +230,74 @@ def test_claim_eligibility_surfaces_tuned_on_dataset_and_config_frozen_at(tmp_pa
 
     assert verdict["tuned_on_dataset"] == "datasets/processed/vi_wiki_dev"
     assert verdict["config_frozen_at"] == "2026-08-01T00:00:00Z"
+
+
+def test_run_preflight_dedupes_live_probes_across_techniques(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bm25_hybrid_rerank and naive_rag share the same default embedding_model
+    and (in full_rag mode) generator_model — that must be exactly one live
+    probe per (operation, model) pair across the whole run_preflight() call,
+    not one per technique."""
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    calls: list[tuple[str, str]] = []
+
+    def _fake_probe(model: str, operation: str) -> dict[str, Any]:
+        calls.append((operation, model))
+        return {"configured": True, "reachable": True, "latency_ms": 1.0, "error_type": None, "error_detail": None}
+
+    monkeypatch.setattr("ragbench.providers.llm_client.probe_provider", _fake_probe)
+
+    run_preflight(
+        technique_ids=["bm25_hybrid_rerank", "naive_rag"],
+        docs="datasets/sample/docs",
+        qa=str(tmp_path),
+        mode="full_rag",
+    )
+
+    assert calls.count(("embedding", "text-embedding-3-small")) == 1
+    assert calls.count(("chat", "gpt-4.1-mini")) == 1
+
+
+def test_run_benchmarks_aborts_before_ingest_when_preflight_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The architectural fix: a dead/misconfigured provider must be caught
+    before any technique's pipeline.ingest() runs, not after burning hours
+    ingesting a large corpus. Mocks the live probe to simulate a revoked key
+    and spies on load_pipeline().ingest to prove it is never invoked."""
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+
+    ingest_calls: list[Any] = []
+
+    class _SpyPipeline:
+        id = "naive_rag"
+        embedding_model = "text-embedding-3-small"
+
+        def ingest(self, *args: Any, **kwargs: Any) -> Any:
+            ingest_calls.append((args, kwargs))
+            raise AssertionError("ingest must never be called when preflight fails")
+
+    monkeypatch.setattr("ragbench.benchmarks.runner.load_pipeline", lambda technique_id: _SpyPipeline())
+
+    def _fake_probe(model: str, operation: str) -> dict[str, Any]:
+        return {
+            "configured": True,
+            "reachable": False,
+            "latency_ms": 5.0,
+            "error_type": "AuthenticationError",
+            "error_detail": "key revoked",
+        }
+
+    monkeypatch.setattr("ragbench.providers.llm_client.probe_provider", _fake_probe)
+
+    with pytest.raises(ProviderPreflightError):
+        run_benchmarks(
+            technique_ids=["naive_rag"],
+            docs="datasets/sample/docs",
+            qa=str(tmp_path),
+            output=str(tmp_path / "out"),
+            mode="retrieval_only",
+        )
+
+    assert ingest_calls == []

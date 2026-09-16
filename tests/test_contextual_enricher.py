@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from ragbench.core.schema import Chunk
 from ragbench.processing.enrichers.contextual import ContextualEnricher
 
@@ -28,16 +30,37 @@ def test_prepends_context_to_embedding_text_only() -> None:
     assert node.metadata["contextual_prefix"] == "Trích từ báo cáo ACME Q2 2023."
 
 
-def test_failed_context_call_degrades_to_plain_chunk() -> None:
+def test_failed_context_call_propagates_by_default() -> None:
+    """Fail-closed is the new default: a dead/misconfigured provider must not
+    silently retry the same doomed call once per chunk and degrade the whole
+    ingest to plain, non-contextual retrieval with no signal of the failure."""
+
     def boom(doc: str, chunk: str) -> str:
         raise RuntimeError("LLM unavailable")
 
     chunks = [_chunk("c1", "d1", "nội dung gốc")]
-    nodes = ContextualEnricher(documents={"d1": "tài liệu"}, context_fn=boom).enrich(chunks)
+    enricher = ContextualEnricher(documents={"d1": "tài liệu"}, context_fn=boom)
+
+    with pytest.raises(RuntimeError, match="LLM unavailable"):
+        enricher.enrich(chunks)
+    assert enricher.contextualization_failures == 0
+
+
+def test_allow_context_fallback_restores_degrade_to_plain_chunk() -> None:
+    """Explicit opt-in (``allow_context_fallback=True``) restores the old
+    per-chunk degrade-to-"" behavior and counts each fallback."""
+
+    def boom(doc: str, chunk: str) -> str:
+        raise RuntimeError("LLM unavailable")
+
+    chunks = [_chunk("c1", "d1", "nội dung gốc")]
+    enricher = ContextualEnricher(documents={"d1": "tài liệu"}, context_fn=boom, allow_context_fallback=True)
+    nodes = enricher.enrich(chunks)
 
     assert nodes[0].text_for_embedding == "nội dung gốc"
     assert nodes[0].metadata["contextualized"] is False
     assert "contextual_prefix" not in nodes[0].metadata
+    assert enricher.contextualization_failures == 1
 
 
 def test_document_truncation_caps_tokens_sent_to_llm() -> None:
