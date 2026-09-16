@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from ragbench.core.io import iter_input_files
-from ragbench.datasets.adapters import common, viequad_retrieval, zalo_legal_retrieval
+from ragbench.datasets.adapters import common, uit_viquad, viequad_retrieval, zalo_legal_retrieval
 from ragbench.datasets.golden import validate_golden_dataset
 from ragbench.datasets.schema import (
     DocumentRecord,
@@ -141,6 +141,32 @@ def test_zalo_prepared_dataset_passes_validation(tmp_path: Path, monkeypatch: py
     validation = validate_processed_dataset(tmp_path / "zalo")
     assert validation["annotation_type"] == "human"
     assert validation["provenance_warnings"] == []
+
+
+def test_uit_viquad_adapter_pins_revision_and_declares_provenance(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        {
+            "id": "uit_1",
+            "title": "Bài viết",
+            "context": "Nội dung bối cảnh.",
+            "question": "Câu hỏi?",
+            "answers": {"text": ["Câu trả lời"]},
+            "is_impossible": False,
+        }
+    ]
+
+    def load_fixture(split: str) -> list[dict[str, object]]:
+        assert split == "validation"
+        return rows
+
+    monkeypatch.setattr(uit_viquad, "_load_uit_viquad_rows", load_fixture)
+    prepared = uit_viquad.prepare_uit_viquad()
+
+    assert prepared.metadata["source_revision"] == uit_viquad.REVISION
+    assert prepared.metadata["annotation_type"] == "human"
+    assert prepared.metadata["task"] == "extractive_qa"
+    assert prepared.metadata["supports_unanswerable"] is True
+    assert prepared.queries[0].ground_truth_answer == "Câu trả lời"
 
 
 def test_require_datasets_reports_local_namespace_shadow(monkeypatch: pytest.MonkeyPatch) -> None:

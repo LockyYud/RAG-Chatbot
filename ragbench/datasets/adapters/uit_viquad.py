@@ -7,6 +7,9 @@ from ragbench.datasets.adapters.common import answer_text, first_present, limit_
 from ragbench.datasets.schema import DocumentRecord, PreparedDataset, QrelRecord, QueryRecord
 
 REPO_ID = "taidng/UIT-ViQuAD2.0"
+# Pinned so this benchmark reproduces a year from now even if upstream
+# reshapes or relabels the repo.
+REVISION = "406f09a45cc106a8f7b7fd0c25078883fe58cb1f"
 
 
 def prepare_uit_viquad(
@@ -14,7 +17,8 @@ def prepare_uit_viquad(
     limit: int | None = None,
     seed: int = 42,
 ) -> PreparedDataset:
-    rows = limit_rows(rows_from_split(load_hf_dataset(REPO_ID), split), limit, seed)
+    selected_split = split or "validation"
+    rows = limit_rows(_load_uit_viquad_rows(selected_split), limit, seed)
     docs_by_id: dict[str, DocumentRecord] = {}
     queries: list[QueryRecord] = []
     qrels: list[QrelRecord] = []
@@ -63,10 +67,22 @@ def prepare_uit_viquad(
         qrels=qrels,
         metadata={
             "source": REPO_ID,
+            "source_revision": REVISION,
             "license": "check upstream Hugging Face dataset card",
             "adapter": "uit_viquad",
+            "split": selected_split,
+            "upstream_split": selected_split,
+            "annotation_type": "human",
+            "task": "extractive_qa",
+            "supports_unanswerable": True,
+            "language": "vi",
+            "domain": "wikipedia",
         },
     )
+
+
+def _load_uit_viquad_rows(split: str) -> list[dict[str, Any]]:
+    return rows_from_split(load_hf_dataset(REPO_ID, revision=REVISION), split)
 
 
 def _context_id(row: dict[str, Any], context: str) -> str:
