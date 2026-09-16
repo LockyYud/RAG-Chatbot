@@ -32,7 +32,7 @@ Repo đã có lớp adapter để chuẩn hóa các dataset này về `documents
 | --- | --- | --- | --- | --- | --- |
 | `vi_wiki_retrieval` | `mteb/VieQuADRetrieval` | Wikipedia/general knowledge | `retrieval_only` | Nhỏ, có corpus/query/qrels, phù hợp đo BM25/dense/hybrid/rerank tiếng Việt | Core P0 |
 | `vi_mrc_abstention` | `taidng/UIT-ViQuAD2.0` | Wikipedia/general QA | `full_rag` | Có context, answer, `is_impossible`; tốt để đo answer correctness và abstention | Core P0 |
-| `vi_legal_retrieval` | `YuITC/Vietnamese-Legal-Documents` | Luật Việt Nam | `retrieval_only` + `full_rag` | Domain Việt Nam mạnh, có query và relevant document ids, đủ lớn để test vector store/FAISS | Core P0 |
+| `vi_legal_retrieval` | `minhnguyent546/zalo-ai-legal-text-retrieval-2021` | Luật Việt Nam | `retrieval_only` | Human-labelled qrels với train/test split sẵn có, domain Việt Nam mạnh, đủ lớn để test vector store/FAISS | Implemented (adapter) |
 | `vi_legal_rag_small` | `NamSyntax/Vietnamese-Legal-QA-RAG` | Luật Việt Nam | `full_rag` | Có ground-truth context, answer, factoid/multi-hop/unanswerable; rất hợp judge faithfulness/hallucination | Core P1 |
 | `vi_multihop_reasoning` | VIMQA | Wikipedia multi-hop tiếng Việt | `full_rag` | Có supporting facts cấp sentence, cần cho IRCoT/ReAct/GraphRAG/RAPTOR | Conditional P1 |
 | `vi_finance_qa` | VNFinsQA | Tài chính/chứng khoán Việt Nam | `full_rag` | 790 câu hỏi tài chính tiếng Việt do analyst curate; tạo khác biệt thị trường rất rõ | Core P2 |
@@ -49,7 +49,7 @@ không commit raw data.
 | Vietnamese-Customer-Support-QA / CSConDa | Rất hợp thị trường, nhưng cần xác minh license/provenance kỹ hơn vì có nguồn từ real customer interactions |
 | ViMedAQA | Hấp dẫn cho medical RAG, nhưng là high-stakes domain; nên làm sau khi repo có disclaimer, judge protocol và abstention ổn |
 | Open-ViTabQA / OCR-VQA tiếng Việt | Tốt cho table/multimodal RAG, nhưng scope hiện tại của repo vẫn là text RAG |
-| ALQAC full | Rất đáng dùng, nhưng access/format theo từng năm phức tạp hơn `YuITC/Vietnamese-Legal-Documents`; nên làm adapter sau |
+| ALQAC full | Rất đáng dùng, nhưng access/format theo từng năm phức tạp hơn dataset retrieval đã chọn (Zalo AI Challenge 2021); nên làm adapter sau |
 
 Nếu chỉ chọn 5 dataset ưu tiên trong 1-2 tháng tới, nên chọn:
 
@@ -57,7 +57,7 @@ Nếu chỉ chọn 5 dataset ưu tiên trong 1-2 tháng tới, nên chọn:
 | --- | --- | --- | --- |
 | P0 | `sample_vi_enterprise` tự tạo | Local smoke, zero dependency | Clone repo chạy được trong vài phút, kiểm tra ingest/query/eval end-to-end |
 | P0 | `mteb/VieQuADRetrieval` | Vietnamese retrieval benchmark | Nhỏ, dễ tải, đúng format retrieval, có qrels và phù hợp đánh giá embedding/retriever |
-| P0 | `YuITC/Vietnamese-Legal-Documents` | Vietnam legal retrieval/RAG | Domain Việt Nam mạnh, có nhu cầu thực tế, rất hợp với retrieval + citation |
+| P0 | `minhnguyent546/zalo-ai-legal-text-retrieval-2021` | Vietnam legal retrieval | Domain Việt Nam mạnh, có nhu cầu thực tế, qrels human-labelled với train/test split sẵn có |
 | P1 | `taidng/UIT-ViQuAD2.0` | Vietnamese full RAG + abstention | Có answerable/unanswerable, giúp kiểm tra hallucination và refusal |
 | P1 | `NamSyntax/Vietnamese-Legal-QA-RAG` | Vietnamese legal full RAG | Nhỏ nhưng đúng RAG eval: context, answer, multi-hop, unanswerable |
 
@@ -244,21 +244,37 @@ ALQAC là lựa chọn rất hợp với RAG vì có legal document retrieval v�
 
 **Giá trị với repo**: thể hiện tư duy production RAG rõ hơn Wikipedia QA, vì legal RAG cần traceability và citation nghiêm túc.
 
-### Vietnamese Legal Documents / BKAI Legal Retrieval
+### Zalo AI Challenge 2021 Legal Text Retrieval
 
-**Nguồn**: [YuITC/Vietnamese-Legal-Documents](https://huggingface.co/datasets/YuITC/Vietnamese-Legal-Documents)
+**Nguồn**: [minhnguyent546/zalo-ai-legal-text-retrieval-2021](https://huggingface.co/datasets/minhnguyent546/zalo-ai-legal-text-retrieval-2021)
+(pinned revision `5fb3df4300b3a81455fe09af444ec159afa8d212`)
 
-**Nên dùng cho**: legal document retrieval quy mô vừa.
+**Nên dùng cho**: `vi_legal_retrieval` — legal document retrieval quy mô vừa, `retrieval_only`.
 
-Dataset này được mô tả là benchmark retrieval tiếng Việt với corpus legal documents, train/test queries và relevant document ids. Dataset card ghi corpus có `cid`, `text`; split có `qid`, `question`, `cid`, `context_list`, và khoảng 119k rows.
-
-So với ALQAC, dataset này có vẻ tiện hơn để làm retrieval adapter vì format đã rõ. Nên ưu tiên dùng cho:
+Đây là source dataset đã được **implement** (`ragbench/datasets/adapters/zalo_legal_retrieval.py`,
+đăng ký `zalo_legal_retrieval` trong registry), thay cho `YuITC/Vietnamese-Legal-Documents` từng được đề
+xuất ở bản trước của tài liệu này. Lý do chọn Zalo: dataset ship sẵn dạng retrieval triplet
+(corpus/queries/qrels), qrels do con người gán nhãn (`annotation_type: human`) và đã có sẵn split
+`train`/`test` của upstream (2,556 / 640 qrels trên cùng pool 3,196 câu hỏi, corpus 61,425 văn bản luật) —
+không cần tự curate held-out split. Adapter giữ nguyên full corpus (không loại bỏ hard negatives) và lọc
+query theo đúng qrels split được chọn.
 
 - BM25 vs dense vs hybrid.
 - Vietnamese embedding benchmark.
-- Citation-aware full RAG trên điều/khoản luật.
+- Nền tảng retrieval cho `vi_full_rag_v1` sau này nếu cần full-RAG trên domain luật.
 
-**Giá trị với repo**: domain Việt Nam, có quy mô đủ lớn để FAISS/vector store layer thật sự có ý nghĩa.
+**Giá trị với repo**: domain Việt Nam, có quy mô đủ lớn để FAISS/vector store layer thật sự có ý nghĩa,
+qrels con người gán nhãn nên đủ điều kiện làm golden benchmark (không phải synthetic).
+
+### Vietnamese Legal Documents / BKAI Legal Retrieval (alternative, chưa implement)
+
+**Nguồn**: [YuITC/Vietnamese-Legal-Documents](https://huggingface.co/datasets/YuITC/Vietnamese-Legal-Documents)
+
+Từng được đề xuất cho `vi_legal_retrieval` nhưng repo đã chọn Zalo AI Challenge 2021 ở trên thay thế (xem
+lý do phía trên). Dataset card ghi corpus có `cid`, `text`; split có `qid`, `question`, `cid`,
+`context_list`, và khoảng 119k rows — quy mô corpus lớn hơn Zalo đáng kể, nên vẫn có thể cân nhắc làm
+`vi_legal_retrieval_large` hoặc raw-corpus candidate riêng nếu sau này cần benchmark ở quy mô lớn hơn,
+nhưng không phải ưu tiên hiện tại.
 
 ## Nhóm 3: Dataset Tự Xây Cho Thị Trường Việt Nam
 
@@ -379,7 +395,7 @@ Repo hiện đã có sample `quy_che_tuyen_sinh.md`, nên có thể mở rộng 
 | --- | --- | --- | --- | --- | --- |
 | `local_smoke` | `sample_vi_enterprise` | vi | full_rag | recall@k, citation_precision, citation_recall, citation_f1, faithfulness | all |
 | `vi_retrieval_small` | VieQuADRetrieval | vi | retrieval_only | recall@5, mrr, ndcg@10 | BM25, dense, hybrid, RRF |
-| `vi_legal_retrieval` | Vietnamese Legal Documents / ALQAC | vi | retrieval_only + full_rag | recall@k, citation_support, abstention | hybrid, rerank, CRAG |
+| `vi_legal_retrieval` | Zalo AI Challenge 2021 Legal Text Retrieval | vi | retrieval_only | recall@k, ndcg@k, mrr | hybrid, rerank |
 | `en_ir_standard` | BEIR subset | en | retrieval_only | ndcg@10, recall@100, mrr | retrieval techniques |
 | `en_open_qa` | Natural Questions sample | en | full_rag | answer_correctness, citation_precision, citation_recall, citation_f1 | RAG generation |
 | `multi_hop` | HotpotQA / VIMQA / FRAMES | en/vi | full_rag | supporting_fact_recall, answer_correctness | IRCoT, ReAct, GraphRAG |
@@ -506,7 +522,8 @@ datasets/processed/<dataset_id>/
 
 ### Phase 3: Legal RAG Pack
 
-- Implement adapter cho `YuITC/Vietnamese-Legal-Documents` hoặc ALQAC.
+- ~~Implement adapter cho `YuITC/Vietnamese-Legal-Documents` hoặc ALQAC.~~ Done via
+  `zalo_legal_retrieval` (Zalo AI Challenge 2021) — xem "Zalo AI Challenge 2021 Legal Text Retrieval" ở trên.
 - Thêm metadata legal-specific: article, clause, effective date, source.
 - Thêm judge prompt riêng cho citation support tiếng Việt.
 - Thêm failure taxonomy:
@@ -570,7 +587,8 @@ Sau đó có bảng:
 Nếu mục tiêu là làm repo nổi bật với Middle AI Engineer hiring panel, thứ tự tốt nhất là:
 
 1. Implement `VieQuADRetrieval` adapter và benchmark retrieval tiếng Việt.
-2. Implement legal retrieval/RAG pack bằng `Vietnamese-Legal-Documents` hoặc ALQAC.
+2. ~~Implement legal retrieval/RAG pack bằng `Vietnamese-Legal-Documents` hoặc ALQAC.~~ Done via Zalo AI
+   Challenge 2021 (`zalo_legal_retrieval`).
 3. Add BEIR subset để có chuẩn quốc tế.
 4. Add HotpotQA hoặc VIMQA trước khi làm IRCoT/ReAct/GraphRAG.
 5. Tự xây `vietnam_market_rag_v1` nhỏ nhưng sạch, có dataset card, source tracking và citation labels.
