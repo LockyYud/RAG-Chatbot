@@ -35,11 +35,16 @@ def prepare_uit_viquad(
             )
         query_id = str(first_present(row, ["id", "uit_id", "question_id"], f"uit_viquad_{index:06d}"))
         is_answerable = not bool(row.get("is_impossible", False))
+        # Upstream rows for impossible questions still carry an "answers" key
+        # (e.g. {"text": []}), which answer_text() turns into "" rather than
+        # None. An unanswerable question must never carry a ground-truth
+        # answer string, so this is forced rather than derived from "answers".
+        ground_truth_answer = answer_text(row.get("answers")) if is_answerable else None
         queries.append(
             QueryRecord(
                 query_id=query_id,
                 question=str(first_present(row, ["question"], "")),
-                ground_truth_answer=answer_text(row.get("answers")),
+                ground_truth_answer=ground_truth_answer,
                 is_answerable=is_answerable,
                 metadata={
                     "dataset": "uit_viquad",
@@ -55,7 +60,7 @@ def prepare_uit_viquad(
                     query_id=query_id,
                     doc_id=doc_id,
                     relevance=2,
-                    evidence_span=answer_text(row.get("answers")),
+                    evidence_span=ground_truth_answer,
                     metadata={"dataset": "uit_viquad"},
                 )
             )
@@ -86,6 +91,12 @@ def _load_uit_viquad_rows(split: str) -> list[dict[str, Any]]:
 
 
 def _context_id(row: dict[str, Any], context: str) -> str:
-    source_id = first_present(row, ["uit_id", "title"])
+    """Identity is the context text itself (via digest); ``title`` is only a
+    readable prefix. ``uit_id``/``id`` are per-*question*, not per-context —
+    using either here would mint a distinct "document" for every question
+    that shares a paragraph, silently fragmenting the corpus and duplicating
+    every shared context once per question that references it.
+    """
+    title = row.get("title")
     digest = hashlib.sha1(context.encode("utf-8")).hexdigest()[:12]
-    return f"uit_{source_id}_{digest}" if source_id else f"uit_context_{digest}"
+    return f"uit_{title}_{digest}" if title else f"uit_context_{digest}"

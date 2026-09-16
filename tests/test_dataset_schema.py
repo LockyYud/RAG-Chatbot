@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from ragbench.core.io import iter_input_files
+from ragbench.core.schema import EvalItem, RAGAnswer
 from ragbench.datasets.adapters import common, uit_viquad, viequad_retrieval, zalo_legal_retrieval
 from ragbench.datasets.golden import validate_golden_dataset
 from ragbench.datasets.schema import (
@@ -17,6 +18,7 @@ from ragbench.datasets.schema import (
     validate_processed_dataset,
     write_prepared_dataset,
 )
+from ragbench.evaluation.metrics import evaluate_prediction_rows
 
 
 def test_write_validate_and_sample_processed_dataset(tmp_path: Path) -> None:
@@ -167,6 +169,66 @@ def test_uit_viquad_adapter_pins_revision_and_declares_provenance(monkeypatch: p
     assert prepared.metadata["task"] == "extractive_qa"
     assert prepared.metadata["supports_unanswerable"] is True
     assert prepared.queries[0].ground_truth_answer == "Câu trả lời"
+
+
+def test_uit_viquad_dedupes_documents_shared_across_questions(monkeypatch: pytest.MonkeyPatch) -> None:
+    shared_context = "Paris là thủ đô của nước Pháp."
+    rows = [
+        {
+            "id": "0001-0001-0001",
+            "uit_id": "uit_000001",
+            "title": "Paris",
+            "context": shared_context,
+            "question": "Thủ đô của Pháp là gì?",
+            "answers": {"text": ["Paris"]},
+            "is_impossible": False,
+        },
+        {
+            "id": "0001-0001-0002",
+            "uit_id": "uit_000002",
+            "title": "Paris",
+            "context": shared_context,
+            "question": "Nước nào có thủ đô là Paris?",
+            "answers": {"text": ["Pháp"]},
+            "is_impossible": False,
+        },
+    ]
+
+    monkeypatch.setattr(uit_viquad, "_load_uit_viquad_rows", lambda split: rows)
+    prepared = uit_viquad.prepare_uit_viquad()
+
+    assert len(prepared.documents) == 1
+    shared_doc_id = prepared.documents[0].doc_id
+    assert [qrel.doc_id for qrel in prepared.qrels] == [shared_doc_id, shared_doc_id]
+
+
+def test_uit_viquad_unanswerable_rows_have_no_ground_truth_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        {
+            "id": "0001-0001-0002",
+            "uit_id": "uit_000002",
+            "title": "Paris",
+            "context": "Paris là thủ đô của nước Pháp.",
+            "question": "Câu hỏi không có câu trả lời?",
+            # Upstream still ships an "answers" key for impossible questions.
+            "answers": {"text": []},
+            "is_impossible": True,
+        }
+    ]
+
+    monkeypatch.setattr(uit_viquad, "_load_uit_viquad_rows", lambda split: rows)
+    prepared = uit_viquad.prepare_uit_viquad()
+
+    query = prepared.queries[0]
+    assert query.is_answerable is False
+    assert query.ground_truth_answer is None
+    assert prepared.qrels == []
+
+    item = EvalItem(question_id=query.query_id, question=query.question, ground_truth_answer=query.ground_truth_answer)
+    metrics_rows = evaluate_prediction_rows(
+        [item], [RAGAnswer(query=query.question, answer="", contexts=[], abstained=True)]
+    )
+    assert "exact_match" not in metrics_rows[0]
 
 
 def test_validate_processed_dataset_reports_missing_provenance(tmp_path: Path) -> None:
