@@ -25,8 +25,13 @@ Design notes
 - The LLM call is injectable (``context_fn``) so the enricher can be unit-tested
   with no network, and so a pipeline can swap providers.
 - One LLM call per chunk.  The full document is truncated to ``max_doc_tokens``
-  to bound cost; a per-chunk failure degrades to the plain chunk rather than
-  aborting the whole ingest.
+  to bound cost.  By default a failed context call aborts ingest immediately
+  (fail-closed) — a systemic provider failure (dead key, bad config) must not
+  silently retry once per chunk and degrade the whole run to plain,
+  non-contextual retrieval with no signal that context injection never
+  worked.  Pass ``allow_context_fallback=True`` to opt back into per-chunk
+  degrade-to-plain-chunk behavior; each fallback is counted in
+  ``contextualization_failures``.
 """
 
 from __future__ import annotations
@@ -68,6 +73,16 @@ class ContextualEnricher(BaseEnricher):
     max_doc_tokens:
         Truncate each document to this many tokens before sending it to the LLM
         (cost guard for long documents).
+    allow_context_fallback:
+        Default ``False``: a failing context call propagates immediately out
+        of ``enrich()`` on the first failing chunk — a dead/misconfigured
+        provider must not silently retry the same doomed call once per
+        chunk (potentially thousands of times) and degrade the whole run to
+        plain, non-contextual retrieval with no signal that context
+        injection never worked. Pass ``True`` to restore the old
+        degrade-to-"" per-chunk behavior (for people who explicitly want
+        resilience/demo mode over correctness); each fallback increments
+        ``contextualization_failures``.
     """
 
     def __init__(
@@ -77,12 +92,15 @@ class ContextualEnricher(BaseEnricher):
         context_model: str = "gpt-4.1-mini",
         max_doc_tokens: int = 4000,
         context_max_tokens: int = 160,
+        allow_context_fallback: bool = False,
         **_: object,
     ) -> None:
         self.documents = documents
         self.context_model = context_model
         self.max_doc_tokens = max_doc_tokens
         self.context_max_tokens = context_max_tokens
+        self.allow_context_fallback = allow_context_fallback
+        self.contextualization_failures = 0
         self._context_fn = context_fn or self._default_context_fn
 
     def enrich(self, chunks: list[Chunk]) -> list[IndexedNode]:
@@ -115,10 +133,18 @@ class ContextualEnricher(BaseEnricher):
     # ── internals ──────────────────────────────────────────────────────────
 
     def _safe_context(self, document: str, chunk_text: str) -> str:
+        if not self.allow_context_fallback:
+            # Fail-closed by default: let the exception propagate immediately
+            # on the first failing chunk. A per-chunk try/except here would
+            # silently retry the same doomed auth/config failure once per
+            # chunk (thousands of times for a large corpus) and fall back to
+            # plain, non-contextual retrieval with no signal in the output
+            # that context injection never worked.
+            return self._context_fn(document, chunk_text).strip()
         try:
             return self._context_fn(document, chunk_text).strip()
         except Exception:
-            # A single failed context call must not abort the whole ingest.
+            self.contextualization_failures += 1
             return ""
 
     def _default_context_fn(self, document: str, chunk_text: str) -> str:

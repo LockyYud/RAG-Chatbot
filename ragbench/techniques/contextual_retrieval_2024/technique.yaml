@@ -18,7 +18,7 @@
       "Anthropic's prompt-caching serving-cost optimization — this repo reproduces the retrieval-quality technique, not the cost-reduction infrastructure around it"
     ],
     "deviations": [
-      "a failed context-generation call degrades to the plain (uncontextualized) chunk instead of aborting ingest"
+      "by default a failed context-generation call aborts ingest immediately (fail-closed); pass allow_context_fallback=True to instead degrade to the plain (uncontextualized) chunk, which is recorded via the contextualization_failures count in the artifact manifest"
     ]
   },
   "stage": ["enrichment", "indexing", "retrieval", "reranking"],

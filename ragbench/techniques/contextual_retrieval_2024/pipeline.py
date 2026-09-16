@@ -95,6 +95,7 @@ class ContextualRetrievalPipeline(BasePipeline):
         embedding_batch_size: int = 64,
         context_model: str = "gpt-4.1-mini",
         max_doc_tokens: int = 4000,
+        allow_context_fallback: bool = False,
         generator_model: str = "gpt-4.1-mini",
         generator_temperature: float = 0.0,
         generator_max_tokens: int = 700,
@@ -112,6 +113,7 @@ class ContextualRetrievalPipeline(BasePipeline):
         self.embedding_batch_size = embedding_batch_size
         self.context_model = context_model
         self.max_doc_tokens = max_doc_tokens
+        self.allow_context_fallback = allow_context_fallback
         self.generator_model = generator_model
         self.generator_temperature = generator_temperature
         self.generator_max_tokens = generator_max_tokens
@@ -142,11 +144,13 @@ class ContextualRetrievalPipeline(BasePipeline):
         chunks = RecursiveChunker(chunk_size=self.chunk_size, overlap=self.chunk_overlap).chunk(blocks)
 
         # === The novelty: situate each chunk in its document before indexing ===
-        nodes = ContextualEnricher(
+        enricher = ContextualEnricher(
             documents=documents,
             context_model=self.context_model,
             max_doc_tokens=self.max_doc_tokens,
-        ).enrich(chunks)
+            allow_context_fallback=self.allow_context_fallback,
+        )
+        nodes = enricher.enrich(chunks)
 
         # Dense half of the hybrid needs vectors (computed on contextualized text).
         with capture_provider_usage() as embedding_usage:
@@ -174,6 +178,7 @@ class ContextualRetrievalPipeline(BasePipeline):
             {
                 "contextualized_nodes": contextualized,
                 "context_model": self.context_model,
+                "contextualization_failures": enricher.contextualization_failures,
                 "embedding_usage": embedding_usage.to_dict(),
             }
         )
