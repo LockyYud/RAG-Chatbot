@@ -31,7 +31,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from ragbench.core.text import token_count
 from ragbench.providers.embedding_cache import get_embedding_cache
@@ -154,6 +154,89 @@ def check_provider_ready(model: str) -> None:
                 f"  • To use a different provider set CHAT_MODEL / EMBED_MODEL accordingly."
             )
     # Unknown prefix — let litellm raise its own error at call time.
+
+
+# ─── Live provider probe ─────────────────────────────────────────────────────
+
+_PROBE_TIMEOUT_S = 5.0
+
+
+def probe_provider(
+    model: str,
+    operation: Literal["embedding", "chat", "rerank"],
+    *,
+    timeout: float = _PROBE_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Make ONE minimal live request to check *model* is actually reachable.
+
+    ``check_provider_ready`` only checks that the required env var is *set* —
+    a revoked/expired key still passes it. This makes one real, minimal,
+    non-retried request so a dead key is caught before an expensive ingest.
+
+    Returns a dict with:
+      - ``configured``: whether the static (env-var) check passed at all. If
+        ``False``, no network call was attempted — a missing key must never
+        cause a network request.
+      - ``reachable``: whether the live request succeeded.
+      - ``latency_ms``: wall-clock time of the live request, or ``None`` if
+        no request was attempted.
+      - ``error_type``: the live/static failure's exception class name, or
+        ``None`` on success.
+      - ``error_detail``: human-readable detail for the failure, or ``None``.
+
+    Deliberately bypasses ``LLMClient`` for the embedding case (no cache
+    lookup — a cached vector from before a key was revoked must not make a
+    dead key look alive) and never retries (``_call_with_retry`` is not
+    used) — a probe should fail fast, not spend the same 5 attempts a real
+    call would. Never touches ``ProviderUsageLedger``: this traffic is not
+    real usage and must not pollute cost accounting.
+    """
+    result: dict[str, Any] = {
+        "configured": False,
+        "reachable": False,
+        "latency_ms": None,
+        "error_type": None,
+        "error_detail": None,
+    }
+    try:
+        check_provider_ready(model)
+    except RuntimeError as exc:
+        result["error_type"] = type(exc).__name__
+        result["error_detail"] = str(exc)
+        return result
+    result["configured"] = True
+
+    litellm = _litellm()
+    started = time.perf_counter()
+    try:
+        if operation == "embedding":
+            litellm.embedding(model=model, input=["ragbench provider health check"], timeout=timeout)
+        elif operation == "chat":
+            litellm.completion(
+                model=model,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1,
+                timeout=timeout,
+            )
+        elif operation == "rerank":
+            litellm.rerank(
+                model=model,
+                query="ragbench provider health check",
+                documents=["alpha probe document", "beta probe document"],
+                top_n=1,
+                timeout=timeout,
+            )
+        else:
+            raise ValueError(f"unknown probe operation: {operation!r}")
+    except Exception as exc:
+        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 3)
+        result["error_type"] = type(exc).__name__
+        result["error_detail"] = str(exc)
+        return result
+
+    result["reachable"] = True
+    result["latency_ms"] = round((time.perf_counter() - started) * 1000, 3)
+    return result
 
 
 # ─── Retry / backoff ─────────────────────────────────────────────────────────
