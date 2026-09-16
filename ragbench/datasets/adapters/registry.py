@@ -14,6 +14,7 @@ def _load_adapters() -> dict[str, DatasetAdapter]:
     from ragbench.datasets.adapters.vietnamese_legal_qa_rag import prepare_vietnamese_legal_qa_rag
     from ragbench.datasets.adapters.vimqa import prepare_vimqa
     from ragbench.datasets.adapters.vnfinsqa import prepare_vnfinsqa
+    from ragbench.datasets.adapters.zalo_legal_retrieval import prepare_zalo_legal_retrieval
 
     return {
         "viequad_retrieval": prepare_viequad_retrieval,
@@ -22,6 +23,7 @@ def _load_adapters() -> dict[str, DatasetAdapter]:
         "vietnamese_legal_qa_rag": prepare_vietnamese_legal_qa_rag,
         "vimqa": prepare_vimqa,
         "vnfinsqa": prepare_vnfinsqa,
+        "zalo_legal_retrieval": prepare_zalo_legal_retrieval,
     }
 
 

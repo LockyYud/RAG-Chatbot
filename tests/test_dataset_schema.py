@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from ragbench.core.io import iter_input_files
-from ragbench.datasets.adapters import common, viequad_retrieval
+from ragbench.datasets.adapters import common, viequad_retrieval, zalo_legal_retrieval
 from ragbench.datasets.golden import validate_golden_dataset
 from ragbench.datasets.schema import (
     DocumentRecord,
@@ -79,6 +79,68 @@ def test_viequad_query_sampling_keeps_full_corpus(monkeypatch: pytest.MonkeyPatc
     prepared = viequad_retrieval.prepare_viequad_retrieval(limit=1, seed=3)
     assert len(prepared.documents) == 3
     assert prepared.metadata["corpus_policy"] == "full_upstream_corpus"
+
+
+def test_zalo_adapter_scopes_queries_to_split_qrels_and_keeps_full_corpus(monkeypatch: pytest.MonkeyPatch) -> None:
+    corpus = [
+        {"id": "d1", "title": "T1", "text": "Điều khoản một"},
+        {"id": "d2", "title": "T2", "text": "Điều khoản hai"},
+        {"id": "d3", "title": "T3", "text": "hard negative"},
+    ]
+    queries = [
+        {"query_id": "q1", "question": "Câu hỏi một?"},
+        {"query_id": "q2", "question": "Câu hỏi hai?"},
+        {"query_id": "q3", "question": "Câu hỏi chưa có qrel ở split này?"},
+    ]
+    qrels = {
+        "train": [{"query_id": "q1", "corpus_id": "d1", "score": 1}, {"query_id": "q3", "corpus_id": "d3", "score": 1}],
+        "test": [{"query_id": "q2", "corpus_id": "d2", "score": 1}],
+    }
+
+    def load_fixture(repo_id: str, *args: object, **kwargs: object) -> list[dict[str, object]]:
+        assert repo_id == zalo_legal_retrieval.REPO_ID
+        assert kwargs["revision"] == zalo_legal_retrieval.REVISION
+        data_files = kwargs["data_files"]
+        assert isinstance(data_files, str)
+        if data_files.startswith("corpus/"):
+            return corpus
+        if data_files.startswith("queries/"):
+            return queries
+        return qrels[data_files.split("/")[1].split("-")[0]]
+
+    monkeypatch.setattr(zalo_legal_retrieval, "load_hf_dataset", load_fixture)
+    prepared = zalo_legal_retrieval.prepare_zalo_legal_retrieval(split="test")
+
+    assert len(prepared.documents) == 3
+    assert [query.query_id for query in prepared.queries] == ["q2"]
+    assert [qrel.doc_id for qrel in prepared.qrels] == ["d2"]
+    assert prepared.metadata["corpus_policy"] == "full_upstream_corpus"
+    assert prepared.metadata["source_revision"] == zalo_legal_retrieval.REVISION
+    assert prepared.metadata["annotation_type"] == "human"
+    assert prepared.metadata["upstream_split"] == "test"
+
+
+def test_zalo_prepared_dataset_passes_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    corpus = [{"id": "d1", "title": "T1", "text": "Điều khoản một"}]
+    queries = [{"query_id": "q1", "question": "Câu hỏi một?"}]
+    qrels = [{"query_id": "q1", "corpus_id": "d1", "score": 1}]
+
+    def load_fixture(repo_id: str, *args: object, **kwargs: object) -> list[dict[str, object]]:
+        data_files = str(kwargs["data_files"])
+        if data_files.startswith("corpus/"):
+            return corpus
+        if data_files.startswith("queries/"):
+            return queries
+        return qrels
+
+    monkeypatch.setattr(zalo_legal_retrieval, "load_hf_dataset", load_fixture)
+    prepared = zalo_legal_retrieval.prepare_zalo_legal_retrieval(split="test")
+    summary = write_prepared_dataset(prepared, tmp_path / "zalo")
+    assert summary["queries"] == 1
+
+    validation = validate_processed_dataset(tmp_path / "zalo")
+    assert validation["annotation_type"] == "human"
+    assert validation["provenance_warnings"] == []
 
 
 def test_require_datasets_reports_local_namespace_shadow(monkeypatch: pytest.MonkeyPatch) -> None:
