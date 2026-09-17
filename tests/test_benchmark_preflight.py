@@ -301,3 +301,196 @@ def test_run_benchmarks_aborts_before_ingest_when_preflight_fails(
         )
 
     assert ingest_calls == []
+
+
+def _write_qa_jsonl(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "question_id": "q0",
+                "question": "What is this?",
+                "expected_doc_ids": [],
+                "expected_chunk_ids": [],
+                "expected_citations": [],
+                "metadata": {"is_answerable": True},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_run_benchmarks_aborts_before_ingest_when_judge_probe_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dead judge key/model must abort the whole run — before any
+    technique's pipeline.ingest() — the same as a dead technique provider,
+    even though the technique itself is perfectly healthy."""
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    qa_path = tmp_path / "qa.jsonl"
+    _write_qa_jsonl(qa_path)
+
+    ingest_calls: list[Any] = []
+
+    class _SpyPipeline:
+        id = "naive_rag"
+        embedding_model = "text-embedding-3-small"
+        generator_model = "gpt-4.1-mini"
+
+        def ingest(self, *args: Any, **kwargs: Any) -> Any:
+            ingest_calls.append((args, kwargs))
+            raise AssertionError("ingest must never be called when judge preflight fails")
+
+    monkeypatch.setattr("ragbench.benchmarks.runner.load_pipeline", lambda technique_id: _SpyPipeline())
+
+    def _fake_probe(model: str, operation: str) -> dict[str, Any]:
+        if model == "dead-judge-model":
+            return {
+                "configured": True,
+                "reachable": False,
+                "latency_ms": 5.0,
+                "error_type": "AuthenticationError",
+                "error_detail": "judge key revoked",
+            }
+        return {"configured": True, "reachable": True, "latency_ms": 1.0, "error_type": None, "error_detail": None}
+
+    monkeypatch.setattr("ragbench.providers.llm_client.probe_provider", _fake_probe)
+
+    with pytest.raises(ProviderPreflightError):
+        run_benchmarks(
+            technique_ids=["naive_rag"],
+            docs="datasets/sample/docs",
+            qa=str(qa_path),
+            output=str(tmp_path / "out"),
+            mode="full_rag",
+            judge_spec={"type": "openai", "params": {"model": "dead-judge-model"}},
+        )
+
+    assert ingest_calls == []
+
+
+def test_run_benchmarks_dedupes_judge_probe_against_technique_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The judge and the technique's generator_model both default to the same
+    chat model — that must still be exactly one live probe for that
+    (operation, model) pair, not two."""
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    qa_path = tmp_path / "qa.jsonl"
+    _write_qa_jsonl(qa_path)
+
+    calls: list[tuple[str, str]] = []
+
+    class _SpyPipeline:
+        id = "naive_rag"
+        embedding_model = "text-embedding-3-small"
+        generator_model = "gpt-4.1-mini"
+
+        def ingest(self, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("stop after preflight — only the probe count matters here")
+
+    monkeypatch.setattr("ragbench.benchmarks.runner.load_pipeline", lambda technique_id: _SpyPipeline())
+
+    def _fake_probe(model: str, operation: str) -> dict[str, Any]:
+        calls.append((operation, model))
+        return {"configured": True, "reachable": True, "latency_ms": 1.0, "error_type": None, "error_detail": None}
+
+    monkeypatch.setattr("ragbench.providers.llm_client.probe_provider", _fake_probe)
+
+    result = run_benchmarks(
+        technique_ids=["naive_rag"],
+        docs="datasets/sample/docs",
+        qa=str(qa_path),
+        output=str(tmp_path / "out"),
+        mode="full_rag",
+        judge_spec={"type": "openai", "params": {"model": "gpt-4.1-mini"}},
+    )
+
+    assert calls.count(("chat", "gpt-4.1-mini")) == 1
+    # Preflight passed; the technique's own ingest() ran and failed for an
+    # unrelated reason, proving preflight did not abort the run.
+    assert result["runs"][0]["status"] == "failed"
+
+
+def test_run_benchmarks_never_probes_judge_in_retrieval_only_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run_eval` never invokes the judge outside full_rag mode, so a
+    retrieval_only run must not probe — or fail on — a broken judge."""
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    qa_path = tmp_path / "qa.jsonl"
+    _write_qa_jsonl(qa_path)
+
+    calls: list[tuple[str, str]] = []
+
+    class _SpyPipeline:
+        id = "naive_rag"
+        embedding_model = "text-embedding-3-small"
+
+        def ingest(self, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("reached ingest — proves preflight did not abort in retrieval_only mode")
+
+    monkeypatch.setattr("ragbench.benchmarks.runner.load_pipeline", lambda technique_id: _SpyPipeline())
+
+    def _fake_probe(model: str, operation: str) -> dict[str, Any]:
+        calls.append((operation, model))
+        if model == "dead-judge-model":
+            return {
+                "configured": True,
+                "reachable": False,
+                "latency_ms": 5.0,
+                "error_type": "AuthenticationError",
+                "error_detail": "judge key revoked",
+            }
+        return {"configured": True, "reachable": True, "latency_ms": 1.0, "error_type": None, "error_detail": None}
+
+    monkeypatch.setattr("ragbench.providers.llm_client.probe_provider", _fake_probe)
+
+    result = run_benchmarks(
+        technique_ids=["naive_rag"],
+        docs="datasets/sample/docs",
+        qa=str(qa_path),
+        output=str(tmp_path / "out"),
+        mode="retrieval_only",
+        judge_spec={"type": "openai", "params": {"model": "dead-judge-model"}},
+    )
+
+    assert ("chat", "dead-judge-model") not in calls
+    assert result["runs"][0]["status"] == "failed"  # reached ingest — preflight did not abort
+
+
+def test_run_benchmarks_skips_judge_probe_entirely_when_judge_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    qa_path = tmp_path / "qa.jsonl"
+    _write_qa_jsonl(qa_path)
+
+    calls: list[tuple[str, str]] = []
+
+    class _SpyPipeline:
+        id = "naive_rag"
+        embedding_model = "text-embedding-3-small"
+        generator_model = "gpt-4.1-mini"
+
+        def ingest(self, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("stop after preflight — only the probe count matters here")
+
+    monkeypatch.setattr("ragbench.benchmarks.runner.load_pipeline", lambda technique_id: _SpyPipeline())
+
+    def _fake_probe(model: str, operation: str) -> dict[str, Any]:
+        calls.append((operation, model))
+        return {"configured": True, "reachable": True, "latency_ms": 1.0, "error_type": None, "error_detail": None}
+
+    monkeypatch.setattr("ragbench.providers.llm_client.probe_provider", _fake_probe)
+
+    run_benchmarks(
+        technique_ids=["naive_rag"],
+        docs="datasets/sample/docs",
+        qa=str(qa_path),
+        output=str(tmp_path / "out"),
+        mode="full_rag",
+        judge_spec=None,
+    )
+
+    assert set(calls) == {("embedding", "text-embedding-3-small"), ("chat", "gpt-4.1-mini")}

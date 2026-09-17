@@ -619,6 +619,7 @@ def _bench(args: argparse.Namespace) -> None:
 
     if not args.suite and (not args.docs or not args.qa):
         raise SystemExit("Provide --docs and --qa, or use --suite.")
+    judge_spec = {"type": "openai", "params": {"model": args.judge_model}} if args.judge else None
     if args.preflight:
         try:
             result = run_preflight(
@@ -632,6 +633,7 @@ def _bench(args: argparse.Namespace) -> None:
                 concurrency=args.concurrency,
                 latency_sample_size=args.latency_sample_size,
                 offline=args.offline,
+                judge_spec=judge_spec,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
@@ -653,7 +655,7 @@ def _bench(args: argparse.Namespace) -> None:
             resume=args.resume,
             seed=args.seed,
             suite_path=args.suite,
-            judge_spec={"type": "openai", "params": {"model": args.judge_model}} if args.judge else None,
+            judge_spec=judge_spec,
             warmup_queries=args.warmup_queries,
             latency_repetitions=args.latency_repetitions,
             max_estimated_cost_usd=args.max_estimated_cost_usd,

@@ -35,23 +35,102 @@ def _format_check_line(technique_id: str, check: dict[str, Any]) -> str:
     return f"{symbol} [{technique_id}] {check['name']}: {check['detail']}{latency}"
 
 
+def _resolve_judge_model(judge_spec: dict[str, Any]) -> str:
+    """Extract the judge's chat model the same way ``run_eval``/the trust block do.
+
+    ``judge_spec["params"]["model"]`` may simply be absent — a judge can be
+    enabled with an empty ``params`` dict, relying on ``LLMJudge``'s own
+    default. Read that default straight off ``LLMJudge.__init__`` rather than
+    duplicating the literal here, so the two can never drift apart.
+    """
+    model = (judge_spec or {}).get("params", {}).get("model")
+    if model:
+        return str(model)
+    import inspect
+
+    from ragbench.evaluation.judge import LLMJudge
+
+    return str(inspect.signature(LLMJudge.__init__).parameters["model"].default)
+
+
+def _check_judge_ready(
+    judge_spec: dict[str, Any] | None,
+    mode: str,
+    *,
+    offline: bool,
+    verbose: bool,
+    probe_cache: dict[tuple[str, str], dict[str, Any]],
+) -> str | None:
+    """Live-probe the judge's model, deduped against technique probes.
+
+    The judge is only ever invoked by ``run_eval`` in ``full_rag`` mode (see
+    ``ragbench.evaluation.runner``'s ``judge = create_judge(...) if mode ==
+    "full_rag" else None``), so a ``retrieval_only`` run must not probe — or
+    fail on — a judge provider that will never actually be called.
+
+    Shares ``probe_cache`` with ``_check_techniques_ready``'s per-technique
+    probes so a judge model identical to a technique's ``generator_model``
+    (both defaulting to e.g. ``gpt-4.1-mini``) triggers exactly one live
+    request. Returns a failure reason string, or ``None`` if the judge is
+    disabled, not applicable to this mode, or ready.
+    """
+    if judge_spec is None or mode != "full_rag":
+        return None
+    model = _resolve_judge_model(judge_spec)
+    from ragbench.providers.llm_client import check_provider_ready, probe_provider
+
+    if offline:
+        try:
+            check_provider_ready(model)
+        except RuntimeError as exc:
+            if verbose:
+                print(_format_check_line("judge", {"name": "judge", "status": "failed", "detail": str(exc)}))
+            return f"judge not ready: {exc}"
+        if verbose:
+            print(_format_check_line("judge", {"name": "judge", "status": "ok", "detail": model}))
+        return None
+    key = ("chat", model)
+    if key not in probe_cache:
+        probe_cache[key] = probe_provider(model, "chat")
+    probe = probe_cache[key]
+    if verbose:
+        print(
+            _format_check_line(
+                "judge",
+                {
+                    "name": "judge",
+                    "status": "ok" if probe["reachable"] else "failed",
+                    "detail": model,
+                    "latency_ms": probe["latency_ms"],
+                },
+            )
+        )
+    if probe["reachable"]:
+        return None
+    return f"judge not ready: live probe failed for '{model}' (chat): {probe['error_type']}: {probe['error_detail']}"
+
+
 def _check_techniques_ready(
     technique_ids: list[str],
     mode: str,
     *,
     offline: bool = False,
     verbose: bool = False,
+    judge_spec: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Run ``diagnose_technique`` for every technique, deduping live probes.
 
     Live probes are deduplicated by ``(operation, model)`` across *all*
     techniques checked in one call (not just within one technique) via a
-    shared cache dict passed to every ``diagnose_technique`` call.
+    shared cache dict passed to every ``diagnose_technique`` call. When
+    ``judge_spec`` is given, the judge's own model is probed through the same
+    cache (see ``_check_judge_ready``) — a separate provider/credential from
+    any technique's models, not covered by ``diagnose_technique`` at all.
 
     Returns ``(technique_checks, reasons)`` — ``reasons`` is empty iff every
-    technique is ready. Shared by ``run_preflight`` (which folds these
-    reasons into its broader gate list) and ``run_benchmarks`` (which uses
-    them to abort before any ingest).
+    technique (and the judge, when applicable) is ready. Shared by
+    ``run_preflight`` (which folds these reasons into its broader gate list)
+    and ``run_benchmarks`` (which uses them to abort before any ingest).
     """
     technique_checks: list[dict[str, Any]] = []
     reasons: list[str] = []
@@ -69,6 +148,9 @@ def _check_techniques_ready(
         if not diagnosis["ready"]:
             failed = "; ".join(check["detail"] for check in diagnosis["checks"] if check["status"] == "failed")
             reasons.append(f"{technique_id} not ready: {failed}")
+    judge_reason = _check_judge_ready(judge_spec, mode, offline=offline, verbose=verbose, probe_cache=probe_cache)
+    if judge_reason:
+        reasons.append(judge_reason)
     return technique_checks, reasons
 
 
@@ -138,7 +220,9 @@ def run_benchmarks(
     # None of run_benchmarks()'s callers (CLI `bench`, benchmarks/run_all.py,
     # experiments.py) can be trusted to call run_preflight() themselves, so
     # the gate lives here, centrally.
-    _technique_checks, _preflight_reasons = _check_techniques_ready(technique_ids, mode, offline=False, verbose=True)
+    _technique_checks, _preflight_reasons = _check_techniques_ready(
+        technique_ids, mode, offline=False, verbose=True, judge_spec=judge_spec
+    )
     if _preflight_reasons:
         raise ProviderPreflightError(
             "Benchmark aborted before ingest — provider preflight failed: " + "; ".join(_preflight_reasons)
@@ -276,6 +360,7 @@ def run_preflight(
     concurrency: int | None = None,
     latency_sample_size: int | None = None,
     offline: bool = False,
+    judge_spec: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Check everything that can fail *before* spending an ingest/query/API call.
 
@@ -286,7 +371,10 @@ def run_preflight(
     missing API key or a dirty worktree after hours of work; it should
     discover that in seconds, here. Pass ``offline=True`` to skip the live
     provider probes and check only that required env vars are set (today's
-    static-only behavior) — for CI/debugging without network access.
+    static-only behavior) — for CI/debugging without network access. Pass
+    ``judge_spec`` when a judge is configured for a ``full_rag`` run, so a
+    dead judge key/model surfaces here too, not only after ``run_benchmarks``
+    has already ingested for every technique.
     """
     reasons: list[str] = []
     if not suite_path and (not docs or not qa):
@@ -344,7 +432,7 @@ def run_preflight(
             reasons.append(f"dataset has {manifest.get('queries', 0)} queries; suite requires {minimum}")
 
     technique_checks, technique_reasons = _check_techniques_ready(
-        technique_ids, mode, offline=offline, verbose=not offline
+        technique_ids, mode, offline=offline, verbose=not offline, judge_spec=judge_spec
     )
     reasons.extend(technique_reasons)
 

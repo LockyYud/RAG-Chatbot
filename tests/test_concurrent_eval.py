@@ -33,12 +33,28 @@ def _write_qa_dataset(path: Path, count: int = QUESTION_COUNT) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _make_fake_run_single_query(sleep_seconds: dict[str, float], call_log: list[str], log_lock: threading.Lock):
+def _make_fake_run_single_query(
+    sleep_seconds: dict[str, float],
+    call_log: list[str],
+    log_lock: threading.Lock,
+    active_tracker: list[int] | None = None,
+):
+    """``active_tracker``, when given, is ``[active_count, max_active_count]`` —
+    incremented under ``log_lock`` before the sleep and decremented after, so
+    a caller can assert real overlap happened (``max_active_count > 1``)
+    instead of racing on wall-clock time."""
+
     def fake_run_single_query(
         pipeline: Any, item: Any, *, mode: str, latency_repetitions: int, judge: Any, seed: Any = None
     ) -> RAGAnswer:
+        if active_tracker is not None:
+            with log_lock:
+                active_tracker[0] += 1
+                active_tracker[1] = max(active_tracker[1], active_tracker[0])
         time.sleep(sleep_seconds.get(item.question_id, 0.0))
         with log_lock:
+            if active_tracker is not None:
+                active_tracker[0] -= 1
             call_log.append(item.question_id)
         return RAGAnswer(
             query=item.question,
@@ -125,12 +141,12 @@ def test_concurrent_run_matches_sequential_accounting_and_preserves_item_order(
     pipeline2 = load_pipeline("parent_child")
     assert pipeline2 is not None
     call_log_concurrent: list[str] = []
+    active_tracker = [0, 0]  # [active_count, max_active_count]
     monkeypatch.setattr(
         runner_module,
         "_run_single_query",
-        _make_fake_run_single_query(sleep_seconds, call_log_concurrent, threading.Lock()),
+        _make_fake_run_single_query(sleep_seconds, call_log_concurrent, threading.Lock(), active_tracker),
     )
-    started = time.perf_counter()
     concurrent_report = run_eval(
         pipeline2,
         str(parent_child_artifact),
@@ -139,7 +155,6 @@ def test_concurrent_run_matches_sequential_accounting_and_preserves_item_order(
         concurrency=4,
         latency_sample_size=2,
     )
-    elapsed = time.perf_counter() - started
 
     # Predictions land back in items order, regardless of completion order.
     assert [p["question_id"] for p in concurrent_report["predictions"]] == [f"q{i}" for i in range(QUESTION_COUNT)]
@@ -149,9 +164,11 @@ def test_concurrent_run_matches_sequential_accounting_and_preserves_item_order(
         == sequential_report["cost_summary"]["pipeline_cost"]["total"]
     )
     # Real concurrency happened: completion order differs from submission order,
-    # and total wall time is well under the fully-sequential sum of sleeps.
+    # and multiple fake queries were genuinely in flight at once (deterministic
+    # proof of overlap — a wall-clock race here previously flaked on slow CI
+    # runners, see GitHub Actions run 35127331927 on commit 9b2f98b).
     assert call_log_concurrent != [f"q{i}" for i in range(QUESTION_COUNT)]
-    assert elapsed < sum(sleep_seconds.values())
+    assert active_tracker[1] > 1
 
     performance = concurrent_report["performance"]
     assert performance["quality_pass"]["mode"] == "concurrent"
