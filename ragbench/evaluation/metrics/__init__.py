@@ -102,8 +102,14 @@ def _attach_raw_retrieval_scores(
     """
     if "retrieved_chunk_ids" not in prediction.metadata:
         return
-    raw_chunks = list(prediction.metadata.get("retrieved_chunk_ids") or [])
-    raw_docs = list(prediction.metadata.get("retrieved_doc_ids") or [])
+    # `run_eval()` runs one query at `max(cutoffs)` depth and reuses that
+    # single prediction for every cutoff (see `_ensure_evaluation_depth` /
+    # `metrics_by_cutoff`), so the metadata ranking here can be deeper than
+    # this call's `k` — must slice, exactly like `contexts = prediction.
+    # contexts[:k]` above, or a smaller cutoff sees hits that only rank
+    # within the larger one.
+    raw_chunks = list(prediction.metadata.get("retrieved_chunk_ids") or [])[:k]
+    raw_docs = list(prediction.metadata.get("retrieved_doc_ids") or [])[:k]
     raw_retrieved = raw_chunks if expected_chunks else _unique_ranked(raw_docs)
     raw_found = expected & set(raw_retrieved)
     row.update(

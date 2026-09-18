@@ -449,7 +449,9 @@ class LLMClient:
 
         litellm = _litellm()
 
-        def _fetch_batch(batch_indices: list[int], batch: list[str]) -> tuple[list[int], list[str], list[list[float]], int]:
+        def _fetch_batch(
+            batch_indices: list[int], batch: list[str]
+        ) -> tuple[list[int], list[str], list[list[float]], int]:
             response, retries = _call_with_retry(
                 functools.partial(litellm.embedding, model=model, input=batch, timeout=self.timeout)
             )

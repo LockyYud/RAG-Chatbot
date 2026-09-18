@@ -538,7 +538,17 @@ def _row(
         for values in cutoff_metrics.values()
         if isinstance(values, dict)
         for metric, value in values.items()
-        if metric.startswith(("recall_at_", "ndcg_at_", "map_at_", "context_precision_at_"))
+        if metric.startswith(
+            (
+                "recall_at_",
+                "raw_recall_at_",
+                "ndcg_at_",
+                "raw_ndcg_at_",
+                "map_at_",
+                "raw_map_at_",
+                "context_precision_at_",
+            )
+        )
     }
     cost_statuses = {
         item.get("metadata", {}).get("cost_estimate", {}).get("status")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -149,6 +150,60 @@ def test_concurrent_writers_to_the_same_cache_file_do_not_raise_database_locked(
             assert verify_cache.get("model-a", f"text-{index}") == pytest.approx([float(index)])
     finally:
         verify_cache.close()
+
+
+def _out_of_order_fake_litellm(delays_by_first_text: dict[str, float]) -> Any:
+    """Batch N's real HTTP call takes ``delays_by_first_text[batch[0]]``
+    seconds — long enough for a later-submitted, faster batch to finish (and
+    be picked up by ``as_completed``) before an earlier-submitted, slower one
+    does, exercising the actual reordering ``ThreadPoolExecutor`` can produce.
+    """
+
+    def embedding(model: str, input: list[str], timeout: float) -> _FakeEmbeddingResponse:
+        time.sleep(delays_by_first_text.get(input[0], 0.0))
+        return _FakeEmbeddingResponse([[float(len(text)), float(sum(map(ord, text)) % 97)] for text in input])
+
+    return SimpleNamespace(embedding=embedding)
+
+
+def test_create_embeddings_preserves_input_order_when_batches_complete_out_of_order(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression for the concurrent ``create_embeddings()`` rewrite: batches
+    are submitted to a ``ThreadPoolExecutor`` and collected via
+    ``as_completed``, which yields them in *completion* order, not submission
+    order. The first-submitted batch is made the slowest here so it finishes
+    last — if the result assembly used completion order instead of writing
+    into ``vectors[index]`` by each batch's own indices, this would scramble
+    the output.
+    """
+    monkeypatch.setenv("RAGLAB_EMBEDDING_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("LLM_EMBEDDING_INPUT_COST_PER_1K", "1.0")
+    texts = ["batch0-a", "batch0-b", "batch1-a", "batch1-b", "batch2-a", "batch2-b"]
+    # batch0 (submitted first) is slowest; batch2 (submitted last) is fastest.
+    delays = {"batch0-a": 0.3, "batch1-a": 0.15, "batch2-a": 0.0}
+    monkeypatch.setattr("ragbench.providers.llm_client._litellm", lambda: _out_of_order_fake_litellm(delays))
+    client = LLMClient()
+
+    with capture_provider_usage() as ledger:
+        vectors = client.create_embeddings("fake-embed", texts, batch_size=2)
+
+    expected = [[float(len(text)), float(sum(map(ord, text)) % 97)] for text in texts]
+    assert vectors == expected  # exact: fake embedding values are integers cast to float
+
+    usage = ledger.to_dict()
+    assert usage["embedding_calls"] == 3  # one call per batch, despite the reordering
+    assert usage["embedding_cache_hits"] == 0
+    assert usage["embedding_cache_misses"] == 6
+    assert usage["embedding_cost"] > 0
+
+    # Every text is now cached — re-embedding hits the cache, no new calls.
+    call_count_before = usage["embedding_calls"]
+    with capture_provider_usage() as second_ledger:
+        cached = client.create_embeddings("fake-embed", texts, batch_size=2)
+    assert cached == expected
+    assert second_ledger.to_dict()["embedding_cache_hits"] == 6
+    assert call_count_before == 3  # sanity: didn't mutate the first ledger
 
 
 def test_concurrent_create_embeddings_across_threads_does_not_raise(
