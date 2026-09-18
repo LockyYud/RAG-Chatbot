@@ -303,6 +303,7 @@ def run_benchmarks(
                     concurrency=concurrency,
                     latency_sample_size=latency_sample_size,
                     profile_coverage=suite.get("coverage") if suite else None,
+                    resume=resume,
                 )
                 evaluation["index"] = {
                     "build_time_ms": index_time_ms,
@@ -488,6 +489,15 @@ def _matching_report(
             report.get("report_schema_version") == "2"
             and metadata.get("artifact_fingerprint") == manifest["corpus"]["fingerprint"]
             and metadata.get("pipeline_config_fingerprint") == manifest["pipeline"]["config_fingerprint"]
+            # A re-ingested artifact (artifact_version/ingest_fingerprint) or a
+            # query-runtime code change (runtime_fingerprint — retriever/
+            # reranker/generator/verifier can change without requiring
+            # re-ingest, see core.measure) must not let a completed report
+            # from before that change be reused, even if the corpus/config
+            # fingerprints above still happen to match.
+            and metadata.get("artifact_version") == manifest.get("artifact_version")
+            and metadata.get("ingest_fingerprint") == manifest.get("runtime", {}).get("ingest_fingerprint")
+            and metadata.get("runtime_fingerprint") == manifest.get("runtime", {}).get("runtime_fingerprint")
             and metadata.get("dataset_fingerprint") == dataset_fingerprint
             and metadata.get("mode") == mode
             and metadata.get("top_k") == top_k

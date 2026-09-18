@@ -60,6 +60,7 @@ def run_eval(
     concurrency: int = 1,
     latency_sample_size: int = 5,
     profile_coverage: dict[str, Any] | None = None,
+    resume: bool = False,
 ) -> dict:
     if top_k < 1:
         raise ValueError("top_k must be at least 1")
@@ -150,7 +151,7 @@ def run_eval(
         latency_sample_size=latency_sample_size,
         latency_sample_question_ids=latency_sample_question_ids,
     )
-    resumed, resumed_warmup, checkpoint_handle = _open_checkpoint(checkpoint_path, header)
+    resumed, resumed_warmup, checkpoint_handle = _open_checkpoint(checkpoint_path, header, resume=resume)
     if resumed:
         print(
             f"[{pipeline.id}] resuming {len(resumed)}/{len(items)} already-completed queries from {checkpoint_path}",
@@ -672,11 +673,23 @@ def _checkpoint_header(
     protocol change here also starts a fresh checkpoint. ``latency_sample_question_ids``
     is included (not just ``latency_sample_size``) so the *specific* frozen
     sample is part of the equality check, not only its size.
+
+    ``artifact_version``/``ingest_fingerprint`` catch a re-ingested artifact
+    (different corpus representation, even at the same corpus/config
+    fingerprint). ``runtime_fingerprint`` is the one that matters most for a
+    checkpoint specifically: retriever/reranker/generator/verifier code can
+    change without requiring re-ingest (see ``core.measure``'s ingest vs.
+    runtime fingerprint split), so old query predictions must not be reused
+    across such a change even though the artifact itself is still valid to
+    load.
     """
     return {
         "pipeline_id": pipeline.id,
         "artifact_fingerprint": artifact_manifest["corpus"]["fingerprint"],
         "pipeline_config_fingerprint": artifact_manifest["pipeline"]["config_fingerprint"],
+        "artifact_version": artifact_manifest.get("artifact_version"),
+        "ingest_fingerprint": artifact_manifest.get("runtime", {}).get("ingest_fingerprint"),
+        "runtime_fingerprint": artifact_manifest.get("runtime", {}).get("runtime_fingerprint"),
         "dataset_fingerprint": dataset_fingerprint,
         "mode": mode,
         "top_k": top_k,
@@ -694,14 +707,22 @@ def _checkpoint_header(
 
 
 def _open_checkpoint(
-    checkpoint_path: Path, header: dict[str, Any]
+    checkpoint_path: Path, header: dict[str, Any], *, resume: bool
 ) -> tuple[dict[str, RAGAnswer], dict[int, dict[str, Any]], Any]:
     """Return (completed predictions keyed by question_id, completed warm-up
     usage keyed by warm-up index, an open append/write handle).
 
-    Reuses a checkpoint file only if its header matches *exactly* — any
-    parameter drift starts a fresh checkpoint rather than silently mixing
-    predictions from a different run configuration.
+    ``resume=False`` never reads an existing checkpoint file at all — a fresh
+    header is written and any prior file at ``checkpoint_path`` is truncated,
+    matching the CLI's contract that no ``--resume`` flag means a fresh run.
+    Without this, a stale checkpoint left over from an earlier invocation of
+    the same output path (same corpus/config/dataset/eval params) would be
+    silently reused even though the caller never asked to resume anything —
+    exactly the bug this parameter closes.
+
+    ``resume=True`` reuses a checkpoint file only if its header matches
+    *exactly* — any parameter drift starts a fresh checkpoint rather than
+    silently mixing predictions from a different run configuration.
 
     A record is written with ``flush`` + ``fsync`` (see :func:`_append_checkpoint_line`),
     but a hard kill can still land mid-``write()``, leaving a torn trailing
@@ -719,22 +740,24 @@ def _open_checkpoint(
     resumed: dict[str, RAGAnswer] = {}
     resumed_warmup: dict[int, dict[str, Any]] = {}
     header_matches = False
-    raw_text = checkpoint_path.read_bytes().decode("utf-8") if checkpoint_path.exists() else ""
-    # Split on the literal "\n" our writer uses, not str.splitlines() — that
-    # also breaks on unicode line separators (e.g. U+2028) that can appear
-    # un-escaped inside a prediction's text since records are written with
-    # ensure_ascii=False. The byte-offset truncate below must match exactly
-    # where our own writes put each newline, not Python's broader notion of
-    # a "line".
-    raw_lines = raw_text.split("\n")
-    if raw_lines and raw_lines[-1] == "":
-        raw_lines.pop()  # drop the split artifact of the file's trailing "\n"
-    if raw_lines and raw_lines[0].strip():
-        try:
-            first = json.loads(raw_lines[0])
-        except json.JSONDecodeError:
-            first = {}
-        header_matches = first.get("type") == "header" and first.get("header") == header
+    raw_lines: list[str] = []
+    if resume:
+        raw_text = checkpoint_path.read_bytes().decode("utf-8") if checkpoint_path.exists() else ""
+        # Split on the literal "\n" our writer uses, not str.splitlines() —
+        # that also breaks on unicode line separators (e.g. U+2028) that can
+        # appear un-escaped inside a prediction's text since records are
+        # written with ensure_ascii=False. The byte-offset truncate below
+        # must match exactly where our own writes put each newline, not
+        # Python's broader notion of a "line".
+        raw_lines = raw_text.split("\n")
+        if raw_lines and raw_lines[-1] == "":
+            raw_lines.pop()  # drop the split artifact of the file's trailing "\n"
+        if raw_lines and raw_lines[0].strip():
+            try:
+                first = json.loads(raw_lines[0])
+            except json.JSONDecodeError:
+                first = {}
+            header_matches = first.get("type") == "header" and first.get("header") == header
     if header_matches:
         body = raw_lines[1:]
         valid_line_count = 1  # the header line
@@ -925,6 +948,15 @@ def _run_metadata(
         "artifact_path": artifact_path,
         "artifact_fingerprint": artifact_manifest["corpus"]["fingerprint"],
         "pipeline_config_fingerprint": artifact_manifest["pipeline"]["config_fingerprint"],
+        # Recorded so a completed report can be invalidated the same way a
+        # checkpoint is (see _checkpoint_header/_matching_report): a
+        # re-ingested artifact or a query-runtime code change (retriever/
+        # reranker/generator/verifier) must not silently reuse predictions
+        # made under the old artifact_version/ingest_fingerprint/
+        # runtime_fingerprint.
+        "artifact_version": artifact_manifest.get("artifact_version"),
+        "ingest_fingerprint": artifact_manifest.get("runtime", {}).get("ingest_fingerprint"),
+        "runtime_fingerprint": artifact_manifest.get("runtime", {}).get("runtime_fingerprint"),
         "dataset_path": dataset_path,
         "dataset_input_path": dataset_input_path,
         "dataset_fingerprint": dataset_manifest.get("fingerprint") or canonical_fingerprint(dataset_rows),

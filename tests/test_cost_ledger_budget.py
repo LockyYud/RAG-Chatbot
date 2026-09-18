@@ -580,6 +580,7 @@ def test_resuming_an_attempt_that_already_tripped_the_cap_during_warmup_aborts_b
             mode="retrieval_only",
             warmup_queries=1,
             max_estimated_cost_usd=0.01,
+            resume=True,
         )
     # No new API call at all: the already-checkpointed warm-up call is
     # skipped (it's the only configured one), and the resumed run must abort
@@ -654,6 +655,7 @@ def test_warmup_calls_are_checkpointed_and_not_repaid_for_on_resume(
         str(output_path),
         mode="retrieval_only",
         warmup_queries=2,
+        resume=True,
     )
 
     # The already-checkpointed 1st warm-up call must not run again — the

@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -177,20 +178,23 @@ def test_resume_requires_every_run_fingerprint_to_match(tmp_path: Path) -> None:
     manifest = pipeline.ingest("datasets/sample/docs", str(artifact))
     dataset_fingerprint = "sha256:dataset"
     report_path = tmp_path / "parent_child_fixture_eval.json"
+    def _run_metadata(**overrides: Any) -> dict[str, Any]:
+        base = {
+            "artifact_fingerprint": manifest["corpus"]["fingerprint"],
+            "pipeline_config_fingerprint": manifest["pipeline"]["config_fingerprint"],
+            "artifact_version": manifest.get("artifact_version"),
+            "ingest_fingerprint": manifest.get("runtime", {}).get("ingest_fingerprint"),
+            "runtime_fingerprint": manifest.get("runtime", {}).get("runtime_fingerprint"),
+            "dataset_fingerprint": dataset_fingerprint,
+            "mode": "full_rag",
+            "top_k": 5,
+            "evaluation_profile": "citation_rag",
+        }
+        base.update(overrides)
+        return base
+
     report_path.write_text(
-        json.dumps(
-            {
-                "report_schema_version": "2",
-                "run_metadata": {
-                    "artifact_fingerprint": manifest["corpus"]["fingerprint"],
-                    "pipeline_config_fingerprint": manifest["pipeline"]["config_fingerprint"],
-                    "dataset_fingerprint": dataset_fingerprint,
-                    "mode": "full_rag",
-                    "top_k": 5,
-                    "evaluation_profile": "citation_rag",
-                },
-            }
-        ),
+        json.dumps({"report_schema_version": "2", "run_metadata": _run_metadata()}),
         encoding="utf-8",
     )
 
@@ -207,6 +211,66 @@ def test_resume_requires_every_run_fingerprint_to_match(tmp_path: Path) -> None:
         is None
     )
     assert _matching_report(tmp_path, "parent_child", manifest, "sha256:other", "full_rag", 5, "citation_rag") is None
+
+
+def test_matching_report_rejects_stale_runtime_or_ingest_fingerprint(tmp_path: Path) -> None:
+    """A completed report must not be reused across a query-runtime code
+    change (retriever/reranker/generator/verifier) or a re-ingest, even when
+    the corpus/config fingerprints above still happen to match — these are
+    exactly the two fingerprints ``_checkpoint_header`` also gates on, kept
+    in sync here for the completed-report reuse path.
+    """
+    artifact = tmp_path / "artifact"
+    pipeline = load_pipeline("parent_child")
+    assert pipeline is not None
+    manifest = pipeline.ingest("datasets/sample/docs", str(artifact))
+    dataset_fingerprint = "sha256:dataset"
+
+    def _write_report(path: Path, **overrides: Any) -> None:
+        base = {
+            "artifact_fingerprint": manifest["corpus"]["fingerprint"],
+            "pipeline_config_fingerprint": manifest["pipeline"]["config_fingerprint"],
+            "artifact_version": manifest.get("artifact_version"),
+            "ingest_fingerprint": manifest.get("runtime", {}).get("ingest_fingerprint"),
+            "runtime_fingerprint": manifest.get("runtime", {}).get("runtime_fingerprint"),
+            "dataset_fingerprint": dataset_fingerprint,
+            "mode": "full_rag",
+            "top_k": 5,
+            "evaluation_profile": "citation_rag",
+        }
+        base.update(overrides)
+        path.write_text(json.dumps({"report_schema_version": "2", "run_metadata": base}), encoding="utf-8")
+
+    matching = tmp_path / "parent_child_matching_eval.json"
+    _write_report(matching)
+    assert (
+        _matching_report(tmp_path, "parent_child", manifest, dataset_fingerprint, "full_rag", 5, "citation_rag")
+        == matching
+    )
+    matching.unlink()
+
+    stale_runtime = tmp_path / "parent_child_stale_runtime_eval.json"
+    _write_report(stale_runtime, runtime_fingerprint="sha256:stale-runtime-code")
+    assert (
+        _matching_report(tmp_path, "parent_child", manifest, dataset_fingerprint, "full_rag", 5, "citation_rag")
+        is None
+    )
+    stale_runtime.unlink()
+
+    stale_ingest = tmp_path / "parent_child_stale_ingest_eval.json"
+    _write_report(stale_ingest, ingest_fingerprint="sha256:stale-ingest-code")
+    assert (
+        _matching_report(tmp_path, "parent_child", manifest, dataset_fingerprint, "full_rag", 5, "citation_rag")
+        is None
+    )
+    stale_ingest.unlink()
+
+    stale_version = tmp_path / "parent_child_stale_version_eval.json"
+    _write_report(stale_version, artifact_version="5")
+    assert (
+        _matching_report(tmp_path, "parent_child", manifest, dataset_fingerprint, "full_rag", 5, "citation_rag")
+        is None
+    )
 
 
 def test_compare_keeps_two_artifacts_of_same_technique_separate(tmp_path: Path) -> None:

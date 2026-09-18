@@ -62,7 +62,7 @@ def test_full_rag_resume_reconstructs_citation_objects_not_raw_dicts(
     monkeypatch.setattr(runner_module, "_run_single_query", original_run_single_query)
     resuming_pipeline = load_pipeline("parent_child")
     assert resuming_pipeline is not None
-    report = run_eval(resuming_pipeline, str(artifact), "datasets/sample/qa.jsonl", str(output_path))
+    report = run_eval(resuming_pipeline, str(artifact), "datasets/sample/qa.jsonl", str(output_path), resume=True)
 
     assert len(report["predictions"]) == 3  # every question present after resume completed the run
     for prediction in report["predictions"]:
