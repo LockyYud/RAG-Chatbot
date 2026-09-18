@@ -40,7 +40,7 @@ from ragbench.processing.chunkers.fixed_size import FixedSizeChunker
 from ragbench.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
 from ragbench.processing.enrichers.basic import NoEnricher
 from ragbench.processing.parsers.text_parser import TextParser
-from ragbench.providers.llm_client import capture_provider_usage
+from ragbench.providers.llm_client import capture_provider_usage, default_embed_model
 
 
 class NaiveRAGPipeline(BasePipeline):
@@ -68,7 +68,7 @@ class NaiveRAGPipeline(BasePipeline):
         *,
         chunk_size: int = 120,
         chunk_overlap: int = 20,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str | None = None,
         embedding_batch_size: int = 64,
         top_k: int = 5,
         rerank_top_k: int = 3,
@@ -76,7 +76,7 @@ class NaiveRAGPipeline(BasePipeline):
     ) -> None:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.embedding_model = embedding_model
+        self.embedding_model = embedding_model or default_embed_model()
         self.embedding_batch_size = embedding_batch_size
         self.top_k = top_k
         self.rerank_top_k = rerank_top_k

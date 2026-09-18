@@ -18,3 +18,8 @@ benchmarks/results/*
 datasets/user_data/*
 !datasets/user_data/.gitkeep
 datasets/generated/*
+# Large processed datasets (benchmark corpora) don't belong in git — keep
+# only the small, already-committed vi_wiki_retrieval fixture.
+datasets/processed/*
+!datasets/processed/vi_wiki_retrieval/
+!datasets/processed/vi_wiki_retrieval/**

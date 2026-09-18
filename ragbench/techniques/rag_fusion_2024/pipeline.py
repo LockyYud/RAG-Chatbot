@@ -43,7 +43,12 @@ from ragbench.processing.chunkers.recursive import RecursiveChunker
 from ragbench.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
 from ragbench.processing.enrichers.basic import SectionTitleEnricher
 from ragbench.processing.parsers.text_parser import TextParser
-from ragbench.providers.llm_client import LLMClient, capture_provider_usage, check_provider_ready
+from ragbench.providers.llm_client import (
+    LLMClient,
+    capture_provider_usage,
+    check_provider_ready,
+    default_embed_model,
+)
 
 # ─── The novelty ─────────────────────────────────────────────────────────────
 
@@ -61,7 +66,7 @@ class RAGFusionRetriever:
         self,
         nodes: list[IndexedNode],
         *,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str | None = None,
         generator_model: str = "gpt-4.1-mini",
         queries: int = 4,
         per_query_top_k: int = 8,
@@ -73,14 +78,14 @@ class RAGFusionRetriever:
         if missing:
             raise RuntimeError("RAG-Fusion requires embeddings saved during ingest.")
         self.nodes = nodes
-        self.embedding_model = embedding_model
+        self.embedding_model = embedding_model or default_embed_model()
         self.generator_model = generator_model
         self.queries = queries
         self.per_query_top_k = per_query_top_k
         self.rrf_k = rrf_k
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.embedder = Embedder(model=embedding_model)
+        self.embedder = Embedder(model=self.embedding_model)
         self.client = LLMClient()
 
     def retrieve(self, query: str, top_k: int) -> tuple[list[RetrievalResult], dict[str, Any]]:
@@ -219,7 +224,7 @@ class RAGFusionPipeline(BasePipeline):
         *,
         chunk_size: int = 220,
         chunk_overlap: int = 30,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str | None = None,
         embedding_batch_size: int = 64,
         generator_model: str = "gpt-4.1-mini",
         fusion_queries: int = 4,
@@ -234,7 +239,7 @@ class RAGFusionPipeline(BasePipeline):
     ) -> None:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.embedding_model = embedding_model
+        self.embedding_model = embedding_model or default_embed_model()
         self.embedding_batch_size = embedding_batch_size
         self.generator_model = generator_model
         self.fusion_queries = fusion_queries

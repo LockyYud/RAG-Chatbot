@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ragbench.core.measure import canonical_fingerprint
+from ragbench.core.measure import ARTIFACT_VERSION, canonical_fingerprint
 from ragbench.core.schema import IndexedNode
 from ragbench.core.text import dense_cosine
 from ragbench.indexing.artifacts import (
@@ -25,7 +25,7 @@ from ragbench.indexing.vector_stores import JsonMemoryVectorStore
 
 def _fixture_manifest() -> dict:
     return {
-        "artifact_version": "5",
+        "artifact_version": ARTIFACT_VERSION,
         "pipeline": {
             "id": "test",
             "implementation_level": "test",

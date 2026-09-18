@@ -11,7 +11,7 @@ from ragbench.benchmarks.experiments import run_experiment_matrix
 from ragbench.benchmarks.runner import _matching_report, has_failed_runs
 from ragbench.cli.main import _compare
 from ragbench.core.base import get_pipeline_spec, load_pipeline, load_pipeline_for_artifact
-from ragbench.core.measure import canonical_fingerprint
+from ragbench.core.measure import ARTIFACT_VERSION, canonical_fingerprint
 from ragbench.core.schema import BuiltContext, Citation, EvalItem, RAGAnswer, RetrievalResult
 from ragbench.datasets.schema import (
     DocumentRecord,
@@ -34,7 +34,7 @@ def test_artifact_config_is_source_of_truth(tmp_path: Path) -> None:
     assert pipeline is not None
     manifest = pipeline.ingest("datasets/sample/docs", str(artifact))
 
-    assert manifest["artifact_version"] == "5"
+    assert manifest["artifact_version"] == ARTIFACT_VERSION
     assert manifest["pipeline"]["config"]["child_size"] == 77
     assert manifest["pipeline"]["config_fingerprint"].startswith("sha256:")
 

@@ -44,7 +44,7 @@ from ragbench.processing.chunkers.recursive import RecursiveChunker
 from ragbench.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
 from ragbench.processing.enrichers.basic import NoEnricher
 from ragbench.processing.parsers.text_parser import TextParser
-from ragbench.providers.llm_client import capture_provider_usage
+from ragbench.providers.llm_client import capture_provider_usage, default_embed_model
 
 
 class RAGSequencePipeline(BasePipeline):
@@ -73,7 +73,7 @@ class RAGSequencePipeline(BasePipeline):
         *,
         chunk_size: int = 220,
         chunk_overlap: int = 30,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str | None = None,
         embedding_batch_size: int = 64,
         generator_model: str = "gpt-4.1-mini",
         generator_temperature: float = 0.0,
@@ -83,7 +83,7 @@ class RAGSequencePipeline(BasePipeline):
     ) -> None:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.embedding_model = embedding_model
+        self.embedding_model = embedding_model or default_embed_model()
         self.embedding_batch_size = embedding_batch_size
         self.generator_model = generator_model
         self.generator_temperature = generator_temperature

@@ -28,6 +28,7 @@ import os
 import random
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -35,7 +36,7 @@ from typing import Any, Literal, TypeVar
 
 from ragbench.core.text import token_count
 from ragbench.providers.embedding_cache import get_embedding_cache
-from ragbench.providers.env import env_float, load_dotenv
+from ragbench.providers.env import env_float, env_int, load_dotenv
 
 # ─── Defaults (readable from env, overridable per pipeline) ──────────────────
 
@@ -415,6 +416,15 @@ class LLMClient:
         first; only cache misses are batched into real provider calls (respecting
         *batch_size* among the misses), so a cache hit contributes zero cost/tokens
         to the usage ledger — no API call happened for it.
+
+        Cache-miss batches are fired concurrently (up to
+        ``RAGLAB_EMBEDDING_CONCURRENCY`` in flight at once, default 8) since each
+        is an independent HTTP round trip — ingesting a large corpus sequentially,
+        one batch at a time, was the dominant cost of a full benchmark run.
+        Cache writes and ledger updates happen back on this thread as each batch
+        completes, not inside the worker threads: ``EmbeddingCache`` wraps a
+        single sqlite3 connection (not thread-safe by default) and
+        ``ProviderUsageLedger`` is a plain, unlocked dataclass.
         """
         cache = get_embedding_cache()
         vectors: list[list[float] | None] = [None] * len(inputs)
@@ -438,29 +448,42 @@ class LLMClient:
             ledger.embedding_cache_misses += len(miss_texts)
 
         litellm = _litellm()
-        for start in range(0, len(miss_texts), batch_size):
-            batch_indices = miss_indices[start : start + batch_size]
-            batch = miss_texts[start : start + batch_size]
+
+        def _fetch_batch(batch_indices: list[int], batch: list[str]) -> tuple[list[int], list[str], list[list[float]], int]:
             response, retries = _call_with_retry(
                 functools.partial(litellm.embedding, model=model, input=batch, timeout=self.timeout)
             )
             # litellm returns EmbeddingResponse; .data is a list of Embedding objects
             sorted_items = sorted(response.data, key=lambda item: item["index"])
             batch_vectors = [item["embedding"] for item in sorted_items]
-            for index, vector in zip(batch_indices, batch_vectors, strict=True):
-                vectors[index] = vector
-                if cache is not None:
-                    cache.put(model, inputs[index], vector)
-            if ledger is not None:
-                tokens = sum(token_count(text) for text in batch)
-                rate = env_float("LLM_EMBEDDING_INPUT_COST_PER_1K", 0.0)
-                ledger.embedding_calls += 1
-                ledger.embedding_tokens += tokens
-                ledger.embedding_cost += tokens / 1000 * rate
-                ledger.embedding_pricing_configured = ledger.embedding_pricing_configured or _pricing_var_configured(
-                    "LLM_EMBEDDING_INPUT_COST_PER_1K"
-                )
-                ledger.retries += retries
+            return batch_indices, batch, batch_vectors, retries
+
+        batches = [
+            (miss_indices[start : start + batch_size], miss_texts[start : start + batch_size])
+            for start in range(0, len(miss_texts), batch_size)
+        ]
+        max_workers = max(1, env_int("RAGLAB_EMBEDDING_CONCURRENCY", 8))
+
+        if batches:
+            with ThreadPoolExecutor(max_workers=min(max_workers, len(batches))) as pool:
+                futures = [pool.submit(_fetch_batch, batch_indices, batch) for batch_indices, batch in batches]
+                for future in as_completed(futures):
+                    batch_indices, batch, batch_vectors, retries = future.result()
+                    for index, text, vector in zip(batch_indices, batch, batch_vectors, strict=True):
+                        vectors[index] = vector
+                        if cache is not None:
+                            cache.put(model, text, vector)
+                    if ledger is not None:
+                        tokens = sum(token_count(text) for text in batch)
+                        rate = env_float("LLM_EMBEDDING_INPUT_COST_PER_1K", 0.0)
+                        ledger.embedding_calls += 1
+                        ledger.embedding_tokens += tokens
+                        ledger.embedding_cost += tokens / 1000 * rate
+                        ledger.embedding_pricing_configured = (
+                            ledger.embedding_pricing_configured
+                            or _pricing_var_configured("LLM_EMBEDDING_INPUT_COST_PER_1K")
+                        )
+                        ledger.retries += retries
         if cache is not None:
             cache.close()
         assert all(vector is not None for vector in vectors)

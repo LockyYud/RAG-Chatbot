@@ -111,7 +111,6 @@ class ContextualEnricher(BaseEnricher):
             context = self._safe_context(document, chunk.text)
 
             embedding_text = f"{context}\n\n{chunk.text}" if context else chunk.text
-            generation_text = chunk.metadata.get("parent_text", chunk.text)
 
             metadata = dict(chunk.metadata)
             metadata["contextualized"] = bool(context)
@@ -124,7 +123,7 @@ class ContextualEnricher(BaseEnricher):
                     chunk_id=chunk.chunk_id,
                     doc_id=chunk.doc_id,
                     text_for_embedding=embedding_text,
-                    text_for_generation=generation_text,
+                    text_for_generation=chunk.text,
                     metadata=metadata,
                 )
             )

@@ -589,12 +589,17 @@ def _comparisons(
     baseline = next((row for row in successful if row["technique"] == reference_baseline), successful[0])
     metrics = (
         "mrr",
+        "raw_mrr",
         *(f"recall_at_{cutoff}" for cutoff in cutoffs),
+        *(f"raw_recall_at_{cutoff}" for cutoff in cutoffs),
         *(f"ndcg_at_{cutoff}" for cutoff in cutoffs),
+        *(f"raw_ndcg_at_{cutoff}" for cutoff in cutoffs),
         *(f"map_at_{cutoff}" for cutoff in cutoffs),
+        *(f"raw_map_at_{cutoff}" for cutoff in cutoffs),
         *(f"context_precision_at_{cutoff}" for cutoff in cutoffs),
         "evidence_complete_rate",
         f"recall_at_{top_k}",
+        f"raw_recall_at_{top_k}",
         "citation_f1",
         "latency_ms_avg",
         "estimated_cost_avg",

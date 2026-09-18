@@ -21,11 +21,14 @@ for heading-structured documents (policies, legal docs, technical manuals).
 from __future__ import annotations
 
 import time
+from dataclasses import replace
+from pathlib import Path
+from typing import Any
 
 from ragbench.core.base import BasePipeline
-from ragbench.core.io import iter_input_files
+from ragbench.core.io import iter_input_files, read_json
 from ragbench.core.measure import build_ingest_manifest, build_query_metadata, skipped_verification
-from ragbench.core.schema import ArtifactManifest, RAGAnswer
+from ragbench.core.schema import ArtifactManifest, RAGAnswer, RetrievalResult
 from ragbench.indexing.artifacts import save_nodes
 from ragbench.indexing.retrievers import BM25Retriever
 from ragbench.inference.context_builders.citation_context import CitationContextBuilder
@@ -84,13 +87,17 @@ class ParentChildPipeline(BasePipeline):
         blocks = WhitespaceCleaner().clean(blocks)
 
         # === The novelty: split sections into small children, keep parent text ===
-        chunks = ParentChildChunker(
+        chunker = ParentChildChunker(
             child_size=self.child_size,
             child_overlap=self.child_overlap,
-        ).chunk(blocks)
+        )
+        chunks = chunker.chunk(blocks)
 
         # Section-title enrichment prefixes each child with its heading — boosts
-        # BM25 recall on heading keywords.
+        # BM25 recall on heading keywords. Each node only carries a small
+        # ``parent_id`` pointer, not the parent's full text — see
+        # ParentChildChunker's docstring for why that used to blow up
+        # nodes.json (and RAM on reload) by ~10x on a large corpus.
         nodes = SectionTitleEnricher().enrich(chunks)
 
         manifest = build_ingest_manifest(
@@ -103,14 +110,56 @@ class ParentChildPipeline(BasePipeline):
             pipeline_config=self.resolved_config(),
             implementation_level=self.implementation_level,
         )
-        save_nodes(output_path, nodes, manifest)
+        # One canonical copy of each parent's text, keyed by parent_id —
+        # resolved back in at query time (see query()) instead of being
+        # duplicated into every one of its children.
+        save_nodes(output_path, nodes, manifest, extra_files={"parents.json": chunker.parents})
         return manifest
 
     def load(self, artifact_path: str) -> None:
         manifest, nodes = self.load_artifact(artifact_path)
         # BM25 term stats are built once here instead of once per query.
         self._retriever = BM25Retriever(nodes=nodes)
+        parents_path = Path(artifact_path) / "parents.json"
+        self._parents: dict[str, dict[str, Any]] = read_json(parents_path) if parents_path.exists() else {}
         self._mark_loaded(artifact_path, manifest, nodes)
+
+    def _resolve_parent_text(self, results: list[RetrievalResult]) -> list[RetrievalResult]:
+        """Swap each result's child text for its parent section's text.
+
+        The child stays the retrieval unit (BM25 matches on the short,
+        specific snippet), but generation/citation should see the same full
+        parent section this pipeline has always shown them — now read back
+        from the ``parents.json`` sidecar instead of being inlined per node.
+        """
+        resolved = []
+        for result in results:
+            parent_id = result.metadata.get("parent_id")
+            parent = self._parents.get(parent_id) if parent_id else None
+            resolved.append(replace(result, text=parent["text"]) if parent else result)
+        return resolved
+
+    @staticmethod
+    def _dedupe_by_parent(results: list[RetrievalResult], keep: int) -> list[RetrievalResult]:
+        """Keep at most one (the highest-ranked) child per parent section.
+
+        Several children of the same parent commonly rank near the top
+        together. Without this, they'd fill multiple of the final
+        ``rerank_top_k`` slots with — after ``_resolve_parent_text`` — the
+        exact same section text, crowding out other sections that could have
+        contributed distinct evidence.
+        """
+        seen: set[str] = set()
+        deduped: list[RetrievalResult] = []
+        for result in results:
+            key = result.metadata.get("parent_id") or result.chunk_id
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(result)
+            if len(deduped) >= keep:
+                break
+        return [replace(result, rank=index) for index, result in enumerate(deduped, start=1)]
 
     def query(self, question: str, mode: str = "full_rag") -> RAGAnswer:
         self._require_loaded()
@@ -120,17 +169,36 @@ class ParentChildPipeline(BasePipeline):
 
         started = time.perf_counter()
 
-        # 1. Retrieve children with BM25 (cheap, no embeddings, strong on headings).
-        retrieved = self._retriever.retrieve(question, self.top_k)
+        # 1. Retrieve a wide pool of children with BM25 (cheap, no embeddings,
+        #    strong on headings) — wider than top_k so the dedup step below
+        #    has room to reach rerank_top_k distinct parents even when several
+        #    top-ranked children share one. `retrieved` (used for reporting
+        #    and the raw_recall_at_k metric) still mirrors exactly what a
+        #    plain top_k lookup would give — same ranking, just sliced — so
+        #    this headroom never leaks into what "top_k" is measured against.
+        candidate_depth = max(self.top_k, self.rerank_top_k * 4)
+        candidates = self._retriever.retrieve(question, candidate_depth)
+        retrieved = candidates[: self.top_k]
 
-        # 2. Lexical-overlap rerank — boosts results that share rare terms
-        #    with the query, a cheap stand-in for cross-encoder reranking.
-        reranked = LexicalOverlapReranker(weight=self.rerank_weight).rerank(question, retrieved, self.rerank_top_k)
+        # 2. Lexical-overlap rerank over the full candidate pool (no
+        #    truncation yet) — boosts results that share rare terms with the
+        #    query, a cheap stand-in for cross-encoder reranking.
+        fully_reranked = LexicalOverlapReranker(weight=self.rerank_weight).rerank(
+            question, candidates, len(candidates)
+        )
 
-        # 3. Build context.  CitationContextBuilder uses each node's
-        #    ``parent_text`` metadata (set by ParentChildChunker) so the
-        #    generator sees the *parent* section, not just the child snippet.
-        context = CitationContextBuilder(max_tokens=self.max_context_tokens).build_context(question, reranked)
+        # 2b. Keep at most one child per parent section — otherwise the same
+        #     parent section (after _resolve_parent_text) could occupy
+        #     several of the final rerank_top_k slots.
+        reranked = self._dedupe_by_parent(fully_reranked, self.rerank_top_k)
+
+        # 3. Swap each child's text for its parent section (resolved from the
+        #    parents.json sidecar — see _resolve_parent_text) so the generator
+        #    sees the *parent* section, not just the child snippet.
+        resolved = self._resolve_parent_text(reranked)
+
+        # 4. Build context from the parent-resolved results.
+        context = CitationContextBuilder(max_tokens=self.max_context_tokens).build_context(question, resolved)
 
         if mode == "retrieval_only":
             answer = RAGAnswer(query=question, answer="", contexts=context.results, citations=[])

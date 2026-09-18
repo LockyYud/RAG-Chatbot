@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     )
 
 
-ARTIFACT_VERSION = "5"
+ARTIFACT_VERSION = "6"
 
 
 def build_ingest_manifest(
@@ -168,6 +168,13 @@ def build_query_metadata(
     return {
         "latency_ms": round(float(latency_ms), 3),
         "retrieved_count": len(retrieved),
+        # The retriever's own ranking, before context building trims/truncates
+        # by token budget — lets metrics tell "the retriever ranked this
+        # badly" apart from "it ranked fine but didn't fit in the context
+        # window", which `recall_at_k` (scored on `prediction.contexts`)
+        # cannot distinguish on its own.
+        "retrieved_chunk_ids": [result.chunk_id for result in retrieved],
+        "retrieved_doc_ids": [result.doc_id for result in retrieved],
         "context_token_count": context.token_count,
         "retrieval_runtime": retrieval_runtime,
         "retrieval_cost_estimate": retrieval_cost,

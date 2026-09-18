@@ -42,7 +42,7 @@ def default_store_backend(node_count: int, *, has_embeddings: bool) -> str | Non
     return "json_memory"
 
 
-_SIDECAR_FILES = (EMBEDDINGS_FILE, "vector_store.json", "faiss.index")
+_SIDECAR_FILES = (EMBEDDINGS_FILE, "vector_store.json", "faiss.index", "parents.json")
 
 
 def _clear_stale_sidecars(target: Path) -> None:
@@ -68,7 +68,16 @@ def save_nodes(
     nodes: list[IndexedNode],
     manifest: ArtifactManifest,
     store_spec: dict[str, Any] | str | None = None,
+    extra_files: dict[str, Any] | None = None,
 ) -> None:
+    """Persist nodes (and, optionally, technique-specific sidecar files).
+
+    ``extra_files`` maps a filename to JSON-serializable content, written
+    before ``_record_provenance`` hashes the directory — so a technique's own
+    sidecar (e.g. ``parent_child``'s ``parents.json``) is included in the
+    provenance inventory ``_validate_artifact_files`` checks on load, instead
+    of showing up as an untracked file if written after this call returns.
+    """
     validate_manifest(manifest, nodes)
     target = Path(path)
     target.mkdir(parents=True, exist_ok=True)
@@ -80,6 +89,8 @@ def save_nodes(
         if store is not None:
             store.build(nodes)
             store.save(target)
+    for name, payload in (extra_files or {}).items():
+        write_json(target / name, payload)
     _record_provenance(manifest, target)
     write_json(target / "index_manifest.json", manifest)
 

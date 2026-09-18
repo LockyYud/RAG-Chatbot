@@ -11,7 +11,7 @@ def _chunk(chunk_id: str, doc_id: str, text: str, **metadata: object) -> Chunk:
 
 
 def test_prepends_context_to_embedding_text_only() -> None:
-    chunks = [_chunk("c1", "d1", "Doanh thu tăng 3% trong quý.", parent_text="Báo cáo tài chính ACME Q2 2023.")]
+    chunks = [_chunk("c1", "d1", "Doanh thu tăng 3% trong quý.")]
     documents = {"d1": "Báo cáo tài chính ACME Q2 2023. Doanh thu tăng 3% trong quý."}
 
     enricher = ContextualEnricher(
@@ -24,8 +24,8 @@ def test_prepends_context_to_embedding_text_only() -> None:
     # Context prepended for retrieval...
     assert node.text_for_embedding.startswith("Trích từ báo cáo ACME Q2 2023.")
     assert "Doanh thu tăng 3% trong quý." in node.text_for_embedding
-    # ...but generation text stays the original (parent) text — never the synthetic context.
-    assert node.text_for_generation == "Báo cáo tài chính ACME Q2 2023."
+    # ...but generation text stays the original chunk text — never the synthetic context.
+    assert node.text_for_generation == "Doanh thu tăng 3% trong quý."
     assert node.metadata["contextualized"] is True
     assert node.metadata["contextual_prefix"] == "Trích từ báo cáo ACME Q2 2023."
 

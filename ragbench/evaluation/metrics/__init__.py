@@ -50,6 +50,7 @@ def evaluate_prediction_rows(
             "context_tokens": int(prediction.metadata.get("context_token_count", 0)),
             "estimated_cost": _cost(prediction),
         }
+        _attach_raw_retrieval_scores(row, prediction, expected, expected_chunks, relevance, k)
         if item.ground_truth_answer is not None:
             # Only extractive-QA style items carry a ground_truth_answer;
             # unanswerable questions leave it None, so this naturally scopes
@@ -74,6 +75,46 @@ def evaluate_prediction_rows(
             _attach_judge_scores(row, judge)
         rows.append(row)
     return rows
+
+
+def _attach_raw_retrieval_scores(
+    row: dict[str, Any],
+    prediction: RAGAnswer,
+    expected: set[str],
+    expected_chunks: set[str],
+    relevance: dict[str, int],
+    k: int,
+) -> None:
+    """Score the retriever's own ranking, not what survived context building.
+
+    ``recall``/``mrr``/``ndcg``/``map`` above are computed on
+    ``prediction.contexts`` — the result of ``CitationContextBuilder``, which
+    stops adding results once ``max_context_tokens`` is spent. A technique
+    whose results are individually large (e.g. ``parent_child`` returning a
+    full parent section per hit) can fit far fewer than ``k`` of them, making
+    its "recall@k" look worse for a reason that has nothing to do with how
+    well it ranked candidates. ``retrieved_chunk_ids``/``retrieved_doc_ids``
+    (set by ``build_query_metadata``) capture the ranking before that
+    truncation, so ``raw_recall`` etc. isolate retrieval-ranking quality from
+    the context budget's effect on it. Absent on older checkpoints/fixtures
+    written before this field existed — silently skipped rather than raising,
+    like the judge/citation metrics above.
+    """
+    if "retrieved_chunk_ids" not in prediction.metadata:
+        return
+    raw_chunks = list(prediction.metadata.get("retrieved_chunk_ids") or [])
+    raw_docs = list(prediction.metadata.get("retrieved_doc_ids") or [])
+    raw_retrieved = raw_chunks if expected_chunks else _unique_ranked(raw_docs)
+    raw_found = expected & set(raw_retrieved)
+    row.update(
+        {
+            "raw_recall": len(raw_found) / len(expected) if expected else None,
+            "raw_hit_rate": 1.0 if raw_found else (0.0 if expected else None),
+            "raw_mrr": _rr(raw_retrieved, expected) if expected else None,
+            "raw_ndcg": _ndcg(raw_retrieved, relevance, k) if expected else None,
+            "raw_map": _average_precision(raw_retrieved, expected, k) if expected else None,
+        }
+    )
 
 
 # Which sub-judge produces which score. LLMJudge issues two independent calls
@@ -136,6 +177,7 @@ def evaluate_predictions(
         "partial_evidence_rate": _mean(row["evidence_partial"] for row in retrieval),
         "zero_evidence_rate": _mean(row["evidence_zero"] for row in retrieval),
         "retrieval_queries_evaluated": len(retrieval),
+        **_raw_retrieval_aggregate(retrieval, k),
         "answerable_queries": sum(1 for row in rows if row["is_answerable"]),
         "unanswerable_queries": sum(1 for row in rows if not row["is_answerable"]),
         "abstention_accuracy": _mean(row["abstention_correct"] for row in rows),
@@ -196,6 +238,25 @@ def _add_judge_metrics(metrics: dict[str, Any], rows: list[dict[str, Any]]) -> N
             values = [row[key] for row in usable if key in row]
             if values:
                 metrics[key if key != "abstention_correctness" else "judge_abstention_correctness"] = _mean(values)
+
+
+def _raw_retrieval_aggregate(retrieval: list[dict[str, Any]], k: int) -> dict[str, Any]:
+    """Aggregate the raw-ranking metrics ``_attach_raw_retrieval_scores`` attached.
+
+    Omitted entirely (not zero-filled) when no row carries them, e.g. reports
+    built from checkpoints/fixtures predating this field — keeping an absent
+    metric distinguishable from a genuinely measured 0.0.
+    """
+    scored = [row for row in retrieval if "raw_recall" in row]
+    if not scored:
+        return {}
+    return {
+        f"raw_recall_at_{k}": _mean(row["raw_recall"] for row in scored),
+        "raw_hit_rate": _mean(row["raw_hit_rate"] for row in scored),
+        "raw_mrr": _mean(row["raw_mrr"] for row in scored),
+        f"raw_ndcg_at_{k}": _mean(row["raw_ndcg"] for row in scored),
+        f"raw_map_at_{k}": _mean(row["raw_map"] for row in scored),
+    }
 
 
 def retrieval_label_level(items: list[EvalItem]) -> str:

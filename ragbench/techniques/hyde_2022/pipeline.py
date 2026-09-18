@@ -48,7 +48,12 @@ from ragbench.processing.chunkers.recursive import RecursiveChunker
 from ragbench.processing.cleaners.basic import VietnameseNormalizer, WhitespaceCleaner
 from ragbench.processing.enrichers.basic import SectionTitleEnricher
 from ragbench.processing.parsers.text_parser import TextParser
-from ragbench.providers.llm_client import LLMClient, capture_provider_usage, check_provider_ready
+from ragbench.providers.llm_client import (
+    LLMClient,
+    capture_provider_usage,
+    check_provider_ready,
+    default_embed_model,
+)
 
 # ─── The novelty ─────────────────────────────────────────────────────────────
 
@@ -66,7 +71,7 @@ class HyDERetriever:
         self,
         nodes: list[IndexedNode],
         *,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str | None = None,
         generator_model: str = "gpt-4.1-mini",
         samples: int = 5,
         temperature: float = 0.7,
@@ -76,12 +81,12 @@ class HyDERetriever:
         if missing:
             raise RuntimeError("HyDE requires embeddings saved during ingest.")
         self.nodes = nodes
-        self.embedding_model = embedding_model
+        self.embedding_model = embedding_model or default_embed_model()
         self.generator_model = generator_model
         self.samples = max(1, samples)
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.embedder = Embedder(model=embedding_model)
+        self.embedder = Embedder(model=self.embedding_model)
         self.client = LLMClient()
 
     def retrieve(self, query: str, top_k: int) -> tuple[list[RetrievalResult], dict[str, Any]]:
@@ -215,7 +220,7 @@ class HyDEPipeline(BasePipeline):
         *,
         chunk_size: int = 220,
         chunk_overlap: int = 30,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str | None = None,
         embedding_batch_size: int = 64,
         generator_model: str = "gpt-4.1-mini",
         hyde_samples: int = 5,
@@ -228,7 +233,7 @@ class HyDEPipeline(BasePipeline):
     ) -> None:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.embedding_model = embedding_model
+        self.embedding_model = embedding_model or default_embed_model()
         self.embedding_batch_size = embedding_batch_size
         self.generator_model = generator_model
         self.hyde_samples = hyde_samples
